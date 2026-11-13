@@ -1,0 +1,16 @@
+NASA Space Environment Assets
+
+earth_nasa.jpg
+NASA Goddard Space Flight Center, Blue Marble 2015 flat map texture.
+https://svs.gsfc.nasa.gov/30763
+
+jupiter_nasa.jpg
+NASA Goddard Space Flight Center / Space Telescope Science Institute,
+Hubble global map of Jupiter (2015).
+https://svs.gsfc.nasa.gov/12021
+
+starmap_nasa.jpg
+NASA Scientific Visualization Studio, An Elsewhere Starfield (2020).
+https://svs.gsfc.nasa.gov/4856
+
+NASA SVS material is public domain unless the individual item indicates otherwise.

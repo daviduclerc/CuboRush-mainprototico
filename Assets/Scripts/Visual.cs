@@ -76,9 +76,11 @@ public static class Visual
     /// <summary>Metal escuro sem emissão, usado nas peças estruturais.</summary>
     public static Material MatPisoLiso(Color cor)
     {
-        string chave = "LigaPolida" + ColorUtility.ToHtmlStringRGBA(cor);
+        string chave = "LigaComReflexoPlanar" + ColorUtility.ToHtmlStringRGBA(cor);
         if (materiais.TryGetValue(chave, out Material pronto) && pronto != null) return pronto;
-        Material material = new Material(MatMetal(cor, 0.88f));
+        Shader shaderEspelhado = Resources.Load<Shader>("Space/ReflectiveTrack");
+        Material material = shaderEspelhado != null ? new Material(shaderEspelhado) : new Material(MatMetal(cor, 0.88f));
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", cor);
         material.name = "Piso de liga metalica polida";
         if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.95f);
 

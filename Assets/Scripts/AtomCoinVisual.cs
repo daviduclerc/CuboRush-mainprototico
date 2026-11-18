@@ -65,9 +65,9 @@ public sealed class AtomCoinVisual : MonoBehaviour
         if (GameManager.Instancia == null || GameManager.Instancia.Estado != EstadoJogo.Jogando) return;
         fase += Time.deltaTime;
         transform.localPosition = new Vector3(0f, elevacaoVisual + Mathf.Sin(fase * 2.3f) * 0.055f, 0f);
-        // Mantém a face voltada à câmera, com um balanço lento sem ficar de perfil.
+        // Giro contínuo no próprio eixo, mantendo a face legível durante a rotação.
         Quaternion frente = Camera.main != null ? Camera.main.transform.rotation : Quaternion.identity;
-        transform.rotation = frente * Quaternion.Euler(0f, Mathf.Sin(fase * 0.9f) * 24f, Mathf.Sin(fase * 1.1f) * 4f);
+        transform.rotation = frente * Quaternion.Euler(0f, Mathf.Sin(fase * 0.9f) * 18f, fase * 55f);
     }
 
     void EmitirFaiscas(Vector3 centro)

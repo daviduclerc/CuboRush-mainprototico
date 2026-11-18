@@ -33,6 +33,8 @@ public class GameManager : MonoBehaviour
     public float perdaEstabilidadePorSegundo = 1.5f;
     [Tooltip("Estabilidade recuperada ao coletar uma moeda da cor correta.")]
     public float estabilidadePorMoeda = 6f;
+    [Tooltip("Estabilidade perdida ao coletar uma moeda de cor diferente.")]
+    public float perdaPorMoedaDeOutraCor = 6f;
 
     public EstadoJogo Estado { get; private set; } = EstadoJogo.Menu;
     public float Velocidade { get; private set; }
@@ -169,14 +171,29 @@ public class GameManager : MonoBehaviour
 
     // ---------- Eventos do jogo ----------
 
-    public void ColetarMoeda()
+    public void ColetarMoeda(bool corCorreta = true)
     {
+        if (Estado != EstadoJogo.Jogando) return;
         Moedas++;
         Pontos += pontosPorMoeda * Multiplicador;
-        Estabilidade = Mathf.Min(100f, Estabilidade + estabilidadePorMoeda);
-        Tocar(somMoeda, 0.5f);
+        if (corCorreta)
+        {
+            Estabilidade = Mathf.Min(100f, Estabilidade + estabilidadePorMoeda);
+            Tocar(somMoeda, 0.5f);
+        }
+        else
+        {
+            Estabilidade = Mathf.Max(0f, Estabilidade - perdaPorMoedaDeOutraCor);
+            Tocar(somBatida, 0.28f);
+            if (Estabilidade <= 0f)
+            {
+                FimDeJogo();
+                PlayerController jogador = Object.FindAnyObjectByType<PlayerController>();
+                if (jogador != null) jogador.Morrer();
+                CameraFollow.Tremer(0.55f, 0.7f);
+            }
+        }
     }
-
     public void AtivarEscudo() { TemEscudo = true; Tocar(somPowerUp); }
     public void AtivarIma() { TempoIma = duracaoIma; Tocar(somPowerUp); }
     public void AtivarDobro() { TempoDobro = duracaoDobro; Tocar(somPowerUp); }
@@ -277,7 +294,7 @@ public class GameManager : MonoBehaviour
                 Texto(new Rect(0, h * 0.65f, w, 34 * s), "Esc ou P: pausar   |   No celular: deslize o dedo", 22, TextAnchor.MiddleCenter, Color.white, s);
                 Texto(new Rect(0, h * 0.70f, w, 34 * s), "Cor: E avança / Q volta | Clique esquerdo ou toque também avança", 20, TextAnchor.MiddleCenter, Color.white, s);
                 Texto(new Rect(0, h * 0.75f, w, 34 * s), "Portais: atravesse com o Sol na mesma cor para não levar dano", 22, TextAnchor.MiddleCenter, ciano, s);
-                Texto(new Rect(0, h * 0.79f, w, 30 * s), "Moedas da cor do Sol recuperam estabilidade; colisões tiram vida", 19, TextAnchor.MiddleCenter, ouro, s);
+                Texto(new Rect(0, h * 0.79f, w, 30 * s), "Moedas: cor igual recupera estabilidade; outra cor reduz estabilidade", 19, TextAnchor.MiddleCenter, ouro, s);
                 Texto(new Rect(0, h * 0.84f, w, 34 * s), "Recorde: " + Recorde + "     Moedas acumuladas: " + MoedasTotal, 22, TextAnchor.MiddleCenter, ouro, s);
                 break;
 

@@ -215,14 +215,15 @@ public class ObstacleSpawner : MonoBehaviour
             switch (item.tipo)
             {
                 case TipoItem.Moeda:
-                    if (item.corId == jogador.CorId)
-                    {
-                        AtomCoinVisual visualMoeda = item.GetComponentInChildren<AtomCoinVisual>();
-                        if (visualMoeda != null) visualMoeda.Coletar(jogador.VisualSolar != null ? jogador.VisualSolar : jogador.transform);
-                        jogo.ColetarMoeda();
-                        Remover(i);
-                    }
+                {
+                    bool corCorreta = item.corId == jogador.CorId;
+                    AtomCoinVisual visualMoeda = item.GetComponentInChildren<AtomCoinVisual>();
+                    if (visualMoeda != null) visualMoeda.Coletar(jogador.VisualSolar != null ? jogador.VisualSolar : jogador.transform);
+                    jogo.ColetarMoeda(corCorreta);
+                    Remover(i);
+                    if (jogo.Estado == EstadoJogo.FimDeJogo) return;
                     break;
+                }
                 case TipoItem.Escudo: jogo.AtivarEscudo(); Remover(i); break;
                 case TipoItem.Ima: jogo.AtivarIma(); Remover(i); break;
                 case TipoItem.Dobro: jogo.AtivarDobro(); Remover(i); break;
@@ -670,6 +671,7 @@ public class ObstacleSpawner : MonoBehaviour
 
     TrackItem Registrar(GameObject obj, TipoItem tipo, Vector3 tamanho)
     {
+        TrackPlanarReflection.IncluirObjeto(obj);
         TrackItem item = obj.AddComponent<TrackItem>();
         item.tipo = tipo;
         item.formaPoliedro = obj.GetComponent<PolyhedronHitShape>();

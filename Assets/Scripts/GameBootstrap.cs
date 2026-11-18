@@ -97,6 +97,8 @@ public static class GameBootstrap
         CameraFollow seguir = camera.GetComponent<CameraFollow>();
         if (seguir == null) seguir = camera.gameObject.AddComponent<CameraFollow>();
         seguir.alvo = cubo.transform;
+        TrackPlanarReflection espelhoDaPista = camera.gameObject.AddComponent<TrackPlanarReflection>();
+        espelhoDaPista.jogador = jogador;
 
         StabilityWorldEffects fasesDaEstrela = new GameObject("FasesDaEstrela")
             .AddComponent<StabilityWorldEffects>();

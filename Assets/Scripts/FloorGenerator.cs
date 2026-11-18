@@ -23,13 +23,13 @@ public class FloorGenerator : MonoBehaviour
     public int quantidadePedacos = 9;
 
     [Header("Visual")]
-    public Color corPiso = new Color(0.13f, 0.16f, 0.20f);
+    public Color corPiso = new Color(0.105f, 0.115f, 0.14f);
     public Color corLinhas = new Color(0.025f, 0.18f, 0.42f);
     public float larguraLinha = 0.035f;
 
     readonly Queue<Transform> pedacos = new Queue<Transform>();
     float proximoZ;
-    static readonly Material[] materiaisLinhaNeon = new Material[6];
+    static readonly Material[] materiaisLinhaNeon = new Material[1];
 
     void Start()
     {
@@ -76,15 +76,8 @@ public class FloorGenerator : MonoBehaviour
         // Liga metálica lisa com guias luminosas longitudinais.
         piso.GetComponent<Renderer>().sharedMaterial = Visual.MatPisoLiso(corPiso);
 
-        // Cada divisa longitudinal tem uma cor neon; o piso entre elas é liso.
-        Color[] coresNeon = {
-            new Color(0.02f, 0.85f, 1f),
-            new Color(0.12f, 0.32f, 1f),
-            new Color(0.62f, 0.12f, 1f),
-            new Color(1f, 0.06f, 0.55f),
-            new Color(0.04f, 1f, 0.65f),
-            new Color(0.55f, 0.85f, 1f)
-        };
+        // Todas as divisas longitudinais usam o mesmo rosa neon.
+        Color[] coresNeon = { new Color(1f, 0.06f, 0.55f) };
         for (int i = 0; i <= quantidadeFaixas; i++)
         {
             Color corNeon = coresNeon[i % coresNeon.Length];
@@ -130,3 +123,4 @@ public class FloorGenerator : MonoBehaviour
         return raiz;
     }
 }
+

@@ -23,12 +23,13 @@ public class FloorGenerator : MonoBehaviour
     public int quantidadePedacos = 9;
 
     [Header("Visual")]
-    public Color corPiso = new Color(0.018f, 0.026f, 0.055f);
+    public Color corPiso = new Color(0.13f, 0.16f, 0.20f);
     public Color corLinhas = new Color(0.025f, 0.18f, 0.42f);
     public float larguraLinha = 0.035f;
 
     readonly Queue<Transform> pedacos = new Queue<Transform>();
     float proximoZ;
+    static readonly Material[] materiaisLinhaNeon = new Material[6];
 
     void Start()
     {
@@ -72,26 +73,34 @@ public class FloorGenerator : MonoBehaviour
             new Vector3(0f, -0.1f, comprimentoPedaco / 2f),
             new Vector3(larguraTotal, 0.2f, comprimentoPedaco), corPiso, false, true, 0.03f);
 
-        // Grade neon: um quadrado por faixa, repetido ao longo do pedaço.
-        piso.GetComponent<Renderer>().sharedMaterial = Visual.MatPiso(corPiso, corLinhas,
-            new Vector2(quantidadeFaixas, comprimentoPedaco / larguraFaixa));
+        // Liga metálica lisa com guias luminosas longitudinais.
+        piso.GetComponent<Renderer>().sharedMaterial = Visual.MatPisoLiso(corPiso);
 
-        // Guias metálicas sutis mantêm as faixas visíveis sem parecer uma grade neon.
+        // Cada divisa longitudinal tem uma cor neon; o piso entre elas é liso.
+        Color[] coresNeon = {
+            new Color(0.02f, 0.85f, 1f),
+            new Color(0.12f, 0.32f, 1f),
+            new Color(0.62f, 0.12f, 1f),
+            new Color(1f, 0.06f, 0.55f),
+            new Color(0.04f, 1f, 0.65f),
+            new Color(0.55f, 0.85f, 1f)
+        };
         for (int i = 0; i <= quantidadeFaixas; i++)
         {
-            GameObject guia = Visual.Forma(PrimitiveType.Cube, "GuiaMetalica", raiz,
-                new Vector3(-larguraTotal / 2f + i * larguraFaixa, 0.01f, comprimentoPedaco / 2f),
-                new Vector3(larguraLinha, 0.025f, comprimentoPedaco), corLinhas, false, raio: 0f);
-            guia.GetComponent<Renderer>().sharedMaterial = Visual.Mat(corLinhas, true);
-        }
-
-        // Trilhos de energia âmbar atravessam a faixa central, como reflexo da supernova.
-        Color corEnergia = new Color(1f, 0.20f, 0.035f);
-        for (int lado = -1; lado <= 1; lado += 2)
-        {
-            Visual.Forma(PrimitiveType.Cube, "TrilhoEnergeticoCentral", raiz,
-                new Vector3(lado * 0.34f, 0.018f, comprimentoPedaco / 2f),
-                new Vector3(0.035f, 0.025f, comprimentoPedaco), corEnergia, true, raio: 0f);
+            Color corNeon = coresNeon[i % coresNeon.Length];
+            GameObject linhaNeon = Visual.Forma(PrimitiveType.Cube, "LinhaNeonLongitudinal", raiz,
+                new Vector3(-larguraTotal / 2f + i * larguraFaixa, 0.008f, comprimentoPedaco / 2f),
+                new Vector3(0.060f, 0.012f, comprimentoPedaco), corNeon, true, raio: 0f);
+            int indiceCor = i % coresNeon.Length;
+            if (materiaisLinhaNeon[indiceCor] == null)
+            {
+                Material neon = new Material(Visual.Mat(corNeon, true));
+                neon.name = "Neon vibrante da pista " + indiceCor;
+                neon.EnableKeyword("_EMISSION");
+                neon.SetColor("_EmissionColor", corNeon * 3.5f);
+                materiaisLinhaNeon[indiceCor] = neon;
+            }
+            linhaNeon.GetComponent<Renderer>().sharedMaterial = materiaisLinhaNeon[indiceCor];
         }
 
         // Reforços escuros e travessas finas dão leitura de pista construída.
@@ -110,11 +119,6 @@ public class FloorGenerator : MonoBehaviour
                 new Vector3(0.12f, 0.58f, comprimentoPedaco), new Color(0.035f, 0.055f, 0.095f), false, raio: 0.035f);
             guarda.GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(new Color(0.035f, 0.055f, 0.095f), 0.82f);
 
-            GameObject filete = Visual.Forma(PrimitiveType.Cube, "FileteDeLuzLateral", raiz,
-                new Vector3(bordaX - lado * 0.075f, 0.20f, comprimentoPedaco / 2f),
-                new Vector3(0.05f, 0.045f, comprimentoPedaco),
-                lado < 0 ? new Color(0.05f, 0.48f, 1f) : new Color(0.88f, 0.08f, 1f), true, raio: 0f);
-
             // Travessas curtas dão escala e profundidade às laterais sem bloquear a pista.
             for (float z = 1f; z < comprimentoPedaco; z += 4f)
             {
@@ -123,14 +127,6 @@ public class FloorGenerator : MonoBehaviour
                     metal, false, raio: 0.02f).GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(metal, 0.72f);
             }
         }
-        for (float z = 2f; z < comprimentoPedaco; z += 4f)
-        {
-            GameObject junta = Visual.Forma(PrimitiveType.Cube, "JuntaEstrutural", raiz,
-                new Vector3(0f, 0.012f, z), new Vector3(larguraTotal, 0.025f, 0.035f),
-                new Color(0.075f, 0.12f, 0.22f), false, raio: 0f);
-            junta.GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(new Color(0.075f, 0.12f, 0.22f), 0.45f);
-        }
-
         return raiz;
     }
 }

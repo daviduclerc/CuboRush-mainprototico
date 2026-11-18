@@ -31,7 +31,7 @@ public class CameraFollow : MonoBehaviour
 
     static CameraFollow instancia;
     Camera cam;
-    float tremorAte, tremorForca;
+    float tremorInicio, tremorAte, tremorForca, tremorSemente;
 
     void Awake()
     {
@@ -55,8 +55,15 @@ public class CameraFollow : MonoBehaviour
     public static void Tremer(float duracao, float forca)
     {
         if (instancia == null) return;
-        instancia.tremorAte = Time.unscaledTime + duracao;
-        instancia.tremorForca = forca;
+        float agora = Time.unscaledTime;
+        if (agora >= instancia.tremorAte)
+        {
+            instancia.tremorInicio = agora;
+            instancia.tremorForca = 0f;
+            instancia.tremorSemente = Random.Range(0f, 1000f);
+        }
+        instancia.tremorAte = Mathf.Max(instancia.tremorAte, agora + duracao);
+        instancia.tremorForca = Mathf.Max(instancia.tremorForca, forca);
     }
 
     void LateUpdate()
@@ -68,8 +75,20 @@ public class CameraFollow : MonoBehaviour
             deslocamento.y,
             alvo.position.z + deslocamento.z);
 
-        if (Time.unscaledTime < tremorAte && Time.timeScale > 0f)
-            p += (Vector3)Random.insideUnitCircle * tremorForca;
+        float agora = Time.unscaledTime;
+        if (agora < tremorAte && Time.timeScale > 0f)
+        {
+            float restante = Mathf.Clamp01((tremorAte - agora) / 0.14f);
+            float entrada = Mathf.Clamp01((agora - tremorInicio) / 0.06f);
+            float envelope = Mathf.SmoothStep(0f, 1f, restante) * Mathf.SmoothStep(0f, 1f, entrada);
+            float ruidoX = (Mathf.PerlinNoise(tremorSemente, agora * 24f) - 0.5f) * 2f;
+            float ruidoY = (Mathf.PerlinNoise(tremorSemente + 37.4f, agora * 24f) - 0.5f) * 2f;
+            p += new Vector3(ruidoX, 0f, 0f) * tremorForca * envelope;
+        }
+        else if (agora >= tremorAte)
+        {
+            tremorForca = 0f;
+        }
 
         transform.position = p;
         transform.rotation = Quaternion.Euler(inclinacao, 0f, 0f);

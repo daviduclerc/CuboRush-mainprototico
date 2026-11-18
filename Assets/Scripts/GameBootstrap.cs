@@ -98,6 +98,12 @@ public static class GameBootstrap
         if (seguir == null) seguir = camera.gameObject.AddComponent<CameraFollow>();
         seguir.alvo = cubo.transform;
 
+        StabilityWorldEffects fasesDaEstrela = new GameObject("FasesDaEstrela")
+            .AddComponent<StabilityWorldEffects>();
+        fasesDaEstrela.jogador = jogador;
+        fasesDaEstrela.obstaculos = obstaculos;
+        fasesDaEstrela.cameraJogo = camera;
+
         // Vazio quase preto e estrelas discretas; o buraco negro fica em primeiro plano.
         Texture2D mapaEstelar = SpaceEnvironment.CriarCeuRealista();
         Shader shaderCeu = Shader.Find("Skybox/Panoramic");

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Video;
 
 /// <summary>
 /// Monta um buraco negro ao longe, com horizonte escuro, corona e disco de acreção.
@@ -10,10 +11,18 @@ public class BlackHoleBackdrop : MonoBehaviour
     public Transform jogador;
     public float distancia = 48f;
     public float altura = 2.2f;
-    public float tamanho = 21f;
+    public float tamanho = 32f;
 
     Transform conjunto;
     CameraFollow cameraFollow;
+    VideoPlayer video;
+    RenderTexture texturaVideo;
+    Material materialVideo;
+    Renderer telaVideo;
+    Transform planoVideo;
+    bool videoPronto;
+    Material materialEspera;
+    float proporcaoVideo = 16f / 9f;
 
     void Start()
     {
@@ -28,19 +37,94 @@ public class BlackHoleBackdrop : MonoBehaviour
         plasma.name = "DiscoDeAcrecaoPlasmatico";
         plasma.transform.SetParent(conjunto, false);
         plasma.transform.localPosition = new Vector3(0f, 0f, 0.8f);
-        Texture2D discoRealista = Resources.Load<Texture2D>("Space/blackhole_realistic_v2");
+        Texture2D discoRealista = Resources.Load<Texture2D>("Space/BN_Loop_Preview");
         if (discoRealista == null) discoRealista = Resources.Load<Texture2D>("Space/blackhole_realistic");
         if (discoRealista == null) discoRealista = CriarTexturaPlasma();
-        // Reduz o conjunto sem deformar a imagem: mantém a proporção original do PNG.
-        float alturaDisco = tamanho * 0.85f;
+        // Aumenta bastante o buraco negro sem deformar o PNG original.
+        float alturaDisco = tamanho * 2.25f;
         float larguraDisco = alturaDisco * discoRealista.width / discoRealista.height;
         plasma.transform.localScale = new Vector3(larguraDisco, alturaDisco, 1f);
         Collider colisorPlasma = plasma.GetComponent<Collider>();
         if (colisorPlasma != null) Destroy(colisorPlasma);
-        plasma.GetComponent<Renderer>().sharedMaterial = CriarMaterialPlasma(discoRealista);
+        Shader shaderEspera = Resources.Load<Shader>("Space/BlackHoleVideo");
+        materialEspera = shaderEspera != null ? new Material(shaderEspera) : CriarMaterialPlasma(discoRealista);
+        materialEspera.mainTexture = discoRealista;
+        if (materialEspera.HasProperty("_Aspect")) materialEspera.SetFloat("_Aspect", (float)discoRealista.width / discoRealista.height);
+        plasma.GetComponent<Renderer>().sharedMaterial = materialEspera;
 
         // O centro escuro do horizonte de eventos já faz parte da imagem do plasma.
+        ConfigurarVideo(plasma);
         AtualizarPosicao();
+    }
+
+    void ConfigurarVideo(GameObject plano)
+    {
+        VideoClip clip = Resources.Load<VideoClip>("Space/BN_BlackHole_Loop");
+        Shader shader = Resources.Load<Shader>("Space/BlackHoleVideo");
+        if (clip == null || shader == null) return;
+        planoVideo = plano.transform;
+        telaVideo = plano.GetComponent<Renderer>();
+        int larguraVideo = Mathf.Max(2, (int)clip.width);
+        int alturaVideo = Mathf.Max(2, (int)clip.height);
+        proporcaoVideo = (float)larguraVideo / alturaVideo;
+        texturaVideo = new RenderTexture(larguraVideo, alturaVideo, 0, RenderTextureFormat.ARGB32);
+        texturaVideo.name = "Video do buraco negro BN limpo";
+        texturaVideo.Create();
+        materialVideo = new Material(shader);
+        materialVideo.mainTexture = texturaVideo;
+        materialVideo.SetFloat("_Aspect", proporcaoVideo);
+        video = plano.AddComponent<VideoPlayer>();
+        video.playOnAwake = false;
+        video.source = VideoSource.VideoClip;
+        video.clip = clip;
+        video.isLooping = true;
+        video.audioOutputMode = VideoAudioOutputMode.None;
+        video.renderMode = VideoRenderMode.RenderTexture;
+        video.targetTexture = texturaVideo;
+        video.waitForFirstFrame = true;
+        video.skipOnDrop = true;
+        video.prepareCompleted += VideoPreparado;
+        video.errorReceived += ErroVideo;
+        video.Prepare();
+    }
+
+    void VideoPreparado(VideoPlayer player)
+    {
+        // Mantém a imagem estática até o primeiro quadro estar disponível.
+        player.sendFrameReadyEvents = true;
+        player.frameReady += PrimeiroQuadro;
+        player.Play();
+    }
+
+    void PrimeiroQuadro(VideoPlayer player, long quadro)
+    {
+        if (videoPronto) return;
+        videoPronto = true;
+        telaVideo.sharedMaterial = materialVideo;
+        float alturaVideo = tamanho * 2.25f;
+        planoVideo.localScale = new Vector3(alturaVideo * proporcaoVideo, alturaVideo, 1f);
+        player.frameReady -= PrimeiroQuadro;
+        player.sendFrameReadyEvents = false;
+    }
+
+    void ErroVideo(VideoPlayer player, string mensagem)
+    {
+        Debug.LogWarning("Não foi possível reproduzir o buraco negro BN: " + mensagem);
+    }
+
+    void OnDestroy()
+    {
+        if (video != null)
+        {
+            video.prepareCompleted -= VideoPreparado;
+            video.frameReady -= PrimeiroQuadro;
+            video.errorReceived -= ErroVideo;
+            video.Stop();
+            video.targetTexture = null;
+        }
+        if (texturaVideo != null) { texturaVideo.Release(); Destroy(texturaVideo); }
+        if (materialVideo != null) Destroy(materialVideo);
+        if (materialEspera != null) Destroy(materialEspera);
     }
 
     Texture2D CriarTexturaPlasma()
@@ -119,7 +203,13 @@ public class BlackHoleBackdrop : MonoBehaviour
         if (jogador != null) AtualizarPosicao();
         // Movimento quase imperceptível: a imagem representa um disco distante,
         // então não deve girar como um objeto sólido.
-        conjunto.Rotate(0f, 0f, 0.08f * Time.deltaTime, Space.Self);
+        // A câmera e o horizonte ficam fixos; o movimento pertence ao gás do vídeo.
+        if (video != null && videoPronto)
+        {
+            bool pausado = GameManager.Instancia != null && GameManager.Instancia.Estado == EstadoJogo.Pausado;
+            if (pausado && video.isPlaying) video.Pause();
+            else if (!pausado && !video.isPlaying) video.Play();
+        }
     }
 
     void AtualizarPosicao()

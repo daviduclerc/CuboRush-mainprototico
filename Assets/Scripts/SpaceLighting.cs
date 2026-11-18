@@ -8,12 +8,14 @@ public class SpaceLighting : MonoBehaviour
 
     Light luzQuente;
     Light luzFria;
-    int ultimaCor = -1;
+
+
 
     void Start()
     {
         luzQuente = CriarLuz("LuzDeAcrecao", new Color(1f, 0.64f, 0.39f), 4.0f, 28f);
         luzFria = CriarLuz("LuzDeEstrelas", new Color(0.34f, 0.62f, 1f), 2.4f, 20f);
+
         AtualizarCorDoSol();
         AtualizarPosicao();
     }
@@ -38,15 +40,14 @@ public class SpaceLighting : MonoBehaviour
 
     void AtualizarCorDoSol()
     {
-        if (jogador == null || jogador.CorId == ultimaCor) return;
-        ultimaCor = jogador.CorId;
+        if (jogador == null) return;
 
-        // As duas luzes de preenchimento acompanham exatamente a cor escolhida no Sol.
-        Color corSolar = jogador.CorAtual;
+        Color corSolar = jogador.CorVisualAtual;
+        float energia = GameManager.Instancia != null ? GameManager.Instancia.Estabilidade / 100f : 1f;
         luzQuente.color = corSolar;
         luzFria.color = corSolar;
-        luzQuente.intensity = 5f;
-        luzFria.intensity = 2.8f;
+        luzQuente.intensity = 5f * Mathf.SmoothStep(0.08f, 1f, energia);
+        luzFria.intensity = 0f;
     }
 
     void AtualizarPosicao()

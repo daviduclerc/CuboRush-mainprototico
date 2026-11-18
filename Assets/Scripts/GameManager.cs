@@ -28,12 +28,19 @@ public class GameManager : MonoBehaviour
     public float duracaoIma = 8f;
     public float duracaoDobro = 10f;
 
+    [Header("Estabilidade solar")]
+    [Tooltip("Estabilidade perdida por segundo enquanto o Sol não coleta energia.")]
+    public float perdaEstabilidadePorSegundo = 1.5f;
+    [Tooltip("Estabilidade recuperada ao coletar uma moeda da cor correta.")]
+    public float estabilidadePorMoeda = 6f;
+
     public EstadoJogo Estado { get; private set; } = EstadoJogo.Menu;
     public float Velocidade { get; private set; }
     public float Pontos { get; private set; }
     public int Moedas { get; private set; }
     public int Recorde { get; private set; }
     public int MoedasTotal { get; private set; }
+    public float Estabilidade { get; private set; } = 100f;
     public bool TemEscudo { get; private set; }
     public float TempoIma { get; private set; }
     public float TempoDobro { get; private set; }
@@ -47,6 +54,7 @@ public class GameManager : MonoBehaviour
     static bool pularMenu;
     bool novoRecorde;
     float momentoFim;
+    float tempoImpulsoTermico;
 
     AudioSource audioFonte;
     AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro;
@@ -55,8 +63,10 @@ public class GameManager : MonoBehaviour
     void Awake()
     {
         Instancia = this;
+        if (GetComponent<GameplayHud>() == null) gameObject.AddComponent<GameplayHud>();
         Time.timeScale = 1f;
         Velocidade = velocidadeInicial;
+        Estabilidade = 100f;
         Recorde = PlayerPrefs.GetInt("Recorde", 0);
         MoedasTotal = PlayerPrefs.GetInt("MoedasTotal", 0);
 
@@ -89,12 +99,26 @@ public class GameManager : MonoBehaviour
             case EstadoJogo.Jogando:
                 TempoDeJogo += Time.deltaTime;
                 // Começa subindo devagar e acelera cada vez mais perto do final.
-                Velocidade = Mathf.Min(velocidadeMaxima, velocidadeInicial
+                float velocidadeBase = velocidadeInicial
                     + aceleracao * TempoDeJogo
-                    + aceleracaoFinal * TempoDeJogo * TempoDeJogo);
+                    + aceleracaoFinal * TempoDeJogo * TempoDeJogo;
+                tempoImpulsoTermico = Mathf.Max(0f, tempoImpulsoTermico - Time.deltaTime);
+                float pulso = Mathf.Clamp01(tempoImpulsoTermico / 0.55f);
+                float multiplicadorPulso = 1f + 0.22f * pulso;
+                Velocidade = Mathf.Min(velocidadeMaxima * multiplicadorPulso, velocidadeBase * multiplicadorPulso);
                 Pontos += Velocidade * Time.deltaTime * Multiplicador;
                 if (TempoIma > 0f) TempoIma -= Time.deltaTime;
                 if (TempoDobro > 0f) TempoDobro -= Time.deltaTime;
+
+                Estabilidade = Mathf.Max(0f, Estabilidade - perdaEstabilidadePorSegundo * Time.deltaTime);
+                if (Estabilidade <= 0f)
+                {
+                    FimDeJogo();
+                    PlayerController jogador = Object.FindAnyObjectByType<PlayerController>();
+                    if (jogador != null) jogador.Morrer();
+                    CameraFollow.Tremer(0.55f, 0.7f);
+                    break;
+                }
 
                 if (ApertouPausa())
                 {
@@ -149,6 +173,7 @@ public class GameManager : MonoBehaviour
     {
         Moedas++;
         Pontos += pontosPorMoeda * Multiplicador;
+        Estabilidade = Mathf.Min(100f, Estabilidade + estabilidadePorMoeda);
         Tocar(somMoeda, 0.5f);
     }
 
@@ -168,6 +193,7 @@ public class GameManager : MonoBehaviour
     public void SomDePulo() => Tocar(somPulo, 0.5f);
     public void SomDeCor() => Tocar(somCor, 0.4f);
     public void SomDeTiro() => Tocar(somTiro, 0.6f);
+    public void PulsoTermico() { tempoImpulsoTermico = 0.55f; }
 
     /// <summary>Atravessou uma parede com a cor certa.</summary>
     public void BonusDeCor()
@@ -239,60 +265,6 @@ public class GameManager : MonoBehaviour
         Color ciano = new Color(0.3f, 0.95f, 1f);
         Color ouro = new Color(1f, 0.85f, 0.2f);
 
-        if (Estado != EstadoJogo.Menu)
-        {
-            // Pontos, moedas, recorde e buffs ficam juntos em um painel responsivo.
-            int quantidadeBuffs = (TemEscudo ? 1 : 0) + (TempoIma > 0f ? 1 : 0) + (TempoDobro > 0f ? 1 : 0);
-            float linhaStatus = 22f * s;
-            float linhaBuff = 20f * s;
-            float alturaPainel = 14f * s + linhaStatus * 3f;
-            if (quantidadeBuffs > 0) alturaPainel += 5f * s + linhaBuff * quantidadeBuffs;
-
-            float painelLargura = Mathf.Min(280f * s, Mathf.Max(0f, areaSegura.width - 2f * m));
-            float painelX = Mathf.Max(areaSegura.xMin + m, areaSegura.xMax - m - painelLargura);
-            float topoSeguro = h - areaSegura.yMax;
-            float fundoSeguro = h - areaSegura.yMin;
-            float painelY = topoSeguro + m;
-            if (painelY + alturaPainel > fundoSeguro - m)
-                painelY = Mathf.Max(topoSeguro, fundoSeguro - m - alturaPainel);
-            Rect painel = new Rect(painelX, painelY, painelLargura, alturaPainel);
-            Color corGUI = GUI.color;
-            GUI.color = new Color(0.015f, 0.025f, 0.05f, 0.78f);
-            GUI.DrawTexture(painel, Texture2D.whiteTexture);
-            GUI.color = corGUI;
-
-            float textoX = painel.x + 9f * s;
-            float textoW = Mathf.Max(0f, painel.width - 18f * s);
-            float y = painel.y + 5f * s;
-            Texto(new Rect(textoX, y, textoW, linhaStatus), "PONTOS  " + Mathf.FloorToInt(Pontos), 18, TextAnchor.MiddleRight, Color.white, s);
-            y += linhaStatus;
-            Texto(new Rect(textoX, y, textoW, linhaStatus), "MOEDAS  " + Moedas, 17, TextAnchor.MiddleRight, ouro, s);
-            y += linhaStatus;
-            Texto(new Rect(textoX, y, textoW, linhaStatus), "RECORDE  " + Recorde, 15, TextAnchor.MiddleRight, new Color(0.74f, 0.84f, 0.92f), s);
-            y += linhaStatus;
-
-            if (quantidadeBuffs > 0)
-            {
-                y += 2f * s;
-                GUI.color = new Color(0.3f, 0.55f, 0.8f, 0.55f);
-                GUI.DrawTexture(new Rect(textoX, y, textoW, Mathf.Max(1f, s)), Texture2D.whiteTexture);
-                GUI.color = corGUI;
-                y += 3f * s;
-            }
-            if (TemEscudo)
-            {
-                Texto(new Rect(textoX, y, textoW, linhaBuff), "ESCUDO", 15, TextAnchor.MiddleRight, ciano, s);
-                y += linhaBuff;
-            }
-            if (TempoIma > 0f)
-            {
-                Texto(new Rect(textoX, y, textoW, linhaBuff), "ÍMÃ  " + Mathf.CeilToInt(TempoIma) + "s", 15, TextAnchor.MiddleRight, new Color(0.4f, 1f, 0.5f), s);
-                y += linhaBuff;
-            }
-            if (TempoDobro > 0f)
-                Texto(new Rect(textoX, y, textoW, linhaBuff), "PONTOS 2X  " + Mathf.CeilToInt(TempoDobro) + "s", 15, TextAnchor.MiddleRight, new Color(1f, 0.5f, 0.9f), s);
-        }
-
         Rect centro = new Rect(0, 0, w, h);
         switch (Estado)
         {
@@ -303,8 +275,9 @@ public class GameManager : MonoBehaviour
                 Texto(new Rect(0, h * 0.55f, w, 34 * s), "W, seta para cima ou Espaço: pular", 22, TextAnchor.MiddleCenter, Color.white, s);
                 Texto(new Rect(0, h * 0.60f, w, 34 * s), "S ou seta para baixo: deslizar", 22, TextAnchor.MiddleCenter, Color.white, s);
                 Texto(new Rect(0, h * 0.65f, w, 34 * s), "Esc ou P: pausar   |   No celular: deslize o dedo", 22, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.70f, w, 34 * s), "Q / E ou 1-6: trocar a cor do Sol (primárias e inversas)", 22, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.75f, w, 34 * s), "Paredes só deixam passar o Sol com a cor correspondente", 22, TextAnchor.MiddleCenter, ciano, s);
+                Texto(new Rect(0, h * 0.70f, w, 34 * s), "Cor: E avança / Q volta | Clique esquerdo ou toque também avança", 20, TextAnchor.MiddleCenter, Color.white, s);
+                Texto(new Rect(0, h * 0.75f, w, 34 * s), "Portais: atravesse com o Sol na mesma cor para não levar dano", 22, TextAnchor.MiddleCenter, ciano, s);
+                Texto(new Rect(0, h * 0.79f, w, 30 * s), "Moedas da cor do Sol recuperam estabilidade; colisões tiram vida", 19, TextAnchor.MiddleCenter, ouro, s);
                 Texto(new Rect(0, h * 0.84f, w, 34 * s), "Recorde: " + Recorde + "     Moedas acumuladas: " + MoedasTotal, 22, TextAnchor.MiddleCenter, ouro, s);
                 break;
 

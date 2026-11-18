@@ -49,6 +49,11 @@ public class TrackItem : MonoBehaviour
     [HideInInspector] public float fase;
     /// <summary>Já deu o bônus de travessia (paredes de cor).</summary>
     [HideInInspector] public bool atravessado;
+    [HideInInspector] public bool meteoroCaindo;
+    [HideInInspector] public float alturaAlvoMeteoro = 0.55f;
+    [HideInInspector] public float velocidadeQuedaMeteoro = 8f;
 
-    public Bounds Limites => new Bounds(transform.position, tamanho);
+    [HideInInspector] public PolyhedronHitShape formaPoliedro;
+    public Bounds Limites => formaPoliedro != null ? formaPoliedro.Limites : new Bounds(transform.position, tamanho);
+    public bool Intersects(Bounds caixa) => formaPoliedro != null ? formaPoliedro.Intersects(caixa) : Limites.Intersects(caixa);
 }

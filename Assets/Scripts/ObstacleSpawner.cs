@@ -57,7 +57,6 @@ public class ObstacleSpawner : MonoBehaviour
     static readonly Color corAlto = new Color(0.9f, 0.15f, 0.2f);
     static readonly Color corBarra = new Color(0.55f, 0.3f, 1f);
     static readonly Color corMovel = new Color(0.9f, 0.9f, 0.95f);
-    static readonly Color corMoeda = new Color(1f, 0.85f, 0.15f);
     static readonly Color corEscudo = new Color(0.3f, 0.8f, 1f);
     static readonly Color corIma = new Color(0.3f, 1f, 0.45f);
     static readonly Color corDobro = new Color(1f, 0.5f, 0.9f);
@@ -72,6 +71,7 @@ public class ObstacleSpawner : MonoBehaviour
 
     readonly List<TrackItem> itens = new List<TrackItem>();
     float proximoZ;
+    EstadoJogo estadoAnterior = EstadoJogo.Menu;
     float proximoPowerUpZ;
 
     int Faixas => jogador.quantidadeFaixas;
@@ -91,6 +91,16 @@ public class ObstacleSpawner : MonoBehaviour
         GameManager jogo = GameManager.Instancia;
         if (jogo == null || jogador == null) return;
 
+        bool retomando = estadoAnterior == EstadoJogo.Pausado && jogo.Estado == EstadoJogo.Jogando;
+        estadoAnterior = jogo.Estado;
+        if (retomando)
+        {
+            for (int i = 0; i < itens.Count; i++)
+                if (itens[i] != null) PolyhedronVisual.RestaurarCorpo(itens[i].gameObject);
+        }
+        // A pausa não gera, remove nem move obstáculos; o primeiro quadro sem
+        // deltaTime também aguarda antes de atualizar colisões e projéteis.
+        if (jogo.Estado == EstadoJogo.Pausado || (jogo.Estado == EstadoJogo.Jogando && Time.deltaTime <= 0f)) return;
         float zJogador = jogador.transform.position.z;
 
         while (proximoZ < zJogador + distanciaVisao)
@@ -153,6 +163,14 @@ public class ObstacleSpawner : MonoBehaviour
                 t.position = p;
             }
 
+            if (item.meteoroCaindo)
+            {
+                Vector3 p = t.position;
+                p.y = Mathf.MoveTowards(p.y, item.alturaAlvoMeteoro,
+                    item.velocidadeQuedaMeteoro * Time.deltaTime);
+                t.position = p;
+            }
+
             // Projétil: desce até a altura do cubo e voa contra o jogador.
             // Se bater em um obstáculo no caminho, some (dá para se proteger atrás deles).
             if (item.projetil)
@@ -185,24 +203,32 @@ public class ObstacleSpawner : MonoBehaviour
             }
 
             // Ímã: puxa as moedas próximas.
-            if (item.tipo == TipoItem.Moeda && jogo.TempoIma > 0f &&
+            if (item.tipo == TipoItem.Moeda && item.corId == jogador.CorId && jogo.TempoIma > 0f &&
                 Vector3.Distance(t.position, caixaJogador.center) < raioIma)
             {
                 t.position = Vector3.MoveTowards(t.position, caixaJogador.center,
                     (jogo.Velocidade + 18f) * Time.deltaTime);
             }
 
-            if (!caixaJogador.Intersects(item.Limites)) continue;
+            if (!item.Intersects(caixaJogador)) continue;
 
             switch (item.tipo)
             {
-                case TipoItem.Moeda: jogo.ColetarMoeda(); Remover(i); break;
+                case TipoItem.Moeda:
+                    if (item.corId == jogador.CorId)
+                    {
+                        AtomCoinVisual visualMoeda = item.GetComponentInChildren<AtomCoinVisual>();
+                        if (visualMoeda != null) visualMoeda.Coletar(jogador.VisualSolar != null ? jogador.VisualSolar : jogador.transform);
+                        jogo.ColetarMoeda();
+                        Remover(i);
+                    }
+                    break;
                 case TipoItem.Escudo: jogo.AtivarEscudo(); Remover(i); break;
                 case TipoItem.Ima: jogo.AtivarIma(); Remover(i); break;
                 case TipoItem.Dobro: jogo.AtivarDobro(); Remover(i); break;
 
                 case TipoItem.Obstaculo:
-                    // Paredes coloridas só deixam atravessar com a cor correspondente.
+                    // Portais coloridos só deixam atravessar sem dano com a cor correspondente.
                     if (item.corId >= 0)
                     {
                         if (item.corId == jogador.CorId)
@@ -210,16 +236,26 @@ public class ObstacleSpawner : MonoBehaviour
                             if (!item.atravessado)
                             {
                                 item.atravessado = true;
+                                ColorPortalVisual portal = item.GetComponent<ColorPortalVisual>();
+                                if (portal != null) portal.Atravessar(true);
                                 jogo.BonusDeCor();
                             }
                             break;
                         }
 
-                        // Escudo e invencibilidade não substituem a cor exigida pela parede.
-                        jogo.FimDeJogo();
-                        jogador.Morrer();
-                        CameraFollow.Tremer(0.45f, 0.5f);
-                        return;
+                        // A cor errada causa dano uma vez; as piscadas impedem dano repetido ao atravessar.
+                        if (!item.atravessado)
+                        {
+                            item.atravessado = true;
+                            ColorPortalVisual portal = item.GetComponent<ColorPortalVisual>();
+                            if (portal != null) portal.Atravessar(false);
+                            if (!jogador.Invencivel && jogador.ReceberDano(25f))
+                            {
+                                CameraFollow.Tremer(0.24f, 0.32f);
+                                if (jogo.Estado == EstadoJogo.FimDeJogo) return;
+                            }
+                        }
+                        break;
                     }
 
                     if (jogador.Invencivel) break;
@@ -232,10 +268,11 @@ public class ObstacleSpawner : MonoBehaviour
                     }
                     else
                     {
-                        jogo.FimDeJogo();
-                        jogador.Morrer();
-                        CameraFollow.Tremer(0.45f, 0.5f);
-                        return;
+                        if (jogador.ReceberDano(25f))
+                        {
+                            CameraFollow.Tremer(0.24f, 0.32f);
+                            if (jogo.Estado == EstadoJogo.FimDeJogo) return;
+                        }
                     }
                     break;
             }
@@ -249,7 +286,7 @@ public class ObstacleSpawner : MonoBehaviour
         {
             TrackItem outro = itens[i];
             if (outro == null || outro == projetil || outro.projetil) continue;
-            if (outro.tipo == TipoItem.Obstaculo && caixa.Intersects(outro.Limites)) return true;
+            if (outro.tipo == TipoItem.Obstaculo && outro.Intersects(caixa)) return true;
         }
         return false;
     }
@@ -375,33 +412,9 @@ public class ObstacleSpawner : MonoBehaviour
                 break;
         }
 
-        // Cada tipo é uma forma geométrica vazada, com espinhos nos vértices:
-        // baixo = triângulo, alto = hexágono, barra = retângulo suspenso.
-        int lados;
-        float angulo, espessura;
-        switch (tipo)
-        {
-            case Obst.Baixo: lados = 3; angulo = 90f; espessura = 0.13f; break;
-            case Obst.Barra: lados = 4; angulo = 45f; espessura = 0.18f; break;
-            default: lados = 6; angulo = 90f; espessura = 0.18f; break;
-        }
-
-        // A forma é mais fina que a caixa de colisão, que continua a mesma.
-        Vector3 tamanhoVisual = new Vector3(tamanho.x, tamanho.y, 0.5f);
-        GameObject obj = Visual.Moldura("Obstaculo" + tipo, transform,
-            new Vector3(x, centroY, z), lados, angulo, tamanhoVisual, espessura, cor);
-
-        // Miolo blindado e núcleo luminoso sugerem um módulo de energia montado
-        // sobre uma estrutura real, sem alterar a caixa de colisão do obstáculo.
-        GameObject placa = Visual.Forma(PrimitiveType.Cube, "PlacaBlindada", obj.transform,
-            new Vector3(0f, 0f, 0.30f),
-            new Vector3(tamanho.x * 0.48f, tamanho.y * 0.28f, 0.12f),
-            new Color(0.035f, 0.045f, 0.065f), false, raio: 0.035f);
-        placa.GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(new Color(0.035f, 0.045f, 0.065f), 0.78f);
-        Visual.Forma(PrimitiveType.Sphere, "NucleoDeEnergia", obj.transform,
-            new Vector3(0f, 0f, -0.32f), Vector3.one * 0.22f, cor, true);
-        CriarArtefatoNoObstaculo(obj.transform, tipo, tamanho);
-
+        int faces = tipo == Obst.Baixo ? 3 : (tipo == Obst.Barra ? 4 : 6);
+        GameObject obj = PolyhedronVisual.Criar("Poliedro" + tipo, transform,
+            new Vector3(x, centroY, z), tamanho, faces, cor);
         Registrar(obj, TipoItem.Obstaculo, tamanho);
     }
 
@@ -456,24 +469,9 @@ public class ObstacleSpawner : MonoBehaviour
         Vector3 tamanho = new Vector3(1.8f, 2.2f, 0.9f);
         float limite = MeiaPista - tamanho.x / 2f;
 
-        // Losango vazado.
-        TrackItem item = Registrar(Visual.Moldura("ObstaculoMovel", transform,
+        TrackItem item = Registrar(PolyhedronVisual.Criar("PoliedroMovel", transform,
             new Vector3(Random.Range(-limite, limite), tamanho.y / 2f, z),
-            4, 90f, new Vector3(tamanho.x, tamanho.y, 0.5f), 0.2f, corMovel),
-            TipoItem.Obstaculo, tamanho);
-
-        GarantirArtefatos();
-        if (imagensArtefatos[4] != null && materiaisArtefatos[4] != null)
-        {
-            GameObject nucleo = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            nucleo.name = "NucleoCosmico";
-            nucleo.transform.SetParent(item.transform, false);
-            nucleo.transform.localPosition = new Vector3(0f, 0f, -0.36f);
-            nucleo.transform.localScale = new Vector3(1.15f, 1.45f, 1f);
-            Collider c = nucleo.GetComponent<Collider>(); if (c != null) Destroy(c);
-            nucleo.GetComponent<Renderer>().sharedMaterial = materiaisArtefatos[4];
-        }
-
+            tamanho, 5, corMovel), TipoItem.Obstaculo, tamanho);
         item.velocidadeX = Mathf.Lerp(3f, 6f, d) * (Random.value < 0.5f ? -1f : 1f);    }
 
     /// <summary>
@@ -492,9 +490,8 @@ public class ObstacleSpawner : MonoBehaviour
         {
             int cor = corUnica ? corBase : Random.Range(0, quantidadeCores);
 
-            TrackItem item = Registrar(Visual.Forma(PrimitiveType.Cube, "ParedeDeCor", transform,
-                new Vector3(jogador.PosicaoXDaFaixa(f), tamanho.y / 2f, z), tamanho,
-                PlayerController.Cores[cor], true, false, 0.05f),
+            TrackItem item = Registrar(ColorPortalVisual.Criar(transform,
+                new Vector3(jogador.PosicaoXDaFaixa(f), tamanho.y / 2f, z), tamanho, cor),
                 TipoItem.Obstaculo, tamanho);
             item.corId = cor;
         }
@@ -585,6 +582,7 @@ public class ObstacleSpawner : MonoBehaviour
     void CriarMoedas(int faixa, float z, Obst sobre, float vel)
     {
         const int quantidade = 5;
+        int corDaFileira = Random.Range(0, PlayerController.Cores.Length);
         float x = jogador.PosicaoXDaFaixa(faixa);
 
         // Sobre obstáculo baixo as moedas formam o arco do pulo.
@@ -605,12 +603,12 @@ public class ObstacleSpawner : MonoBehaviour
             else if (sobre == Obst.Barra) y = 0.3f;  // rente ao chão, por baixo da barra
             else y = 0.7f;
 
-            GameObject moeda = Visual.Forma(PrimitiveType.Cylinder, "Moeda", transform,
-                new Vector3(x, y, z + dz), new Vector3(0.32f, 0.065f, 0.32f), corMoeda, true, raio: 0f);
-            moeda.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-
+            int corId = corDaFileira;
+            Color cor = PlayerController.Cores[corId];
+            GameObject moeda = AtomCoinVisual.Criar(transform, new Vector3(x, y, z + dz), corId);
             TrackItem item = Registrar(moeda, TipoItem.Moeda, Vector3.one * 0.9f);
-            item.girar = true;
+            item.corId = corId;
+            item.girar = false; // O átomo anima apenas o visual, preservando a colisão.
         }
     }
 
@@ -636,10 +634,45 @@ public class ObstacleSpawner : MonoBehaviour
         item.girar = true;
     }
 
+    /// <summary>Gera um meteoro que cai numa faixa, com espaço para desviar.</summary>
+    public void CriarMeteoro(float z)
+    {
+        List<int> livres = new List<int>();
+        for (int faixa = 0; faixa < Faixas; faixa++)
+        {
+            float x = jogador.PosicaoXDaFaixa(faixa);
+            bool ocupado = false;
+            for (int i = 0; i < itens.Count; i++)
+            {
+                TrackItem outro = itens[i];
+                if (outro == null || outro.tipo != TipoItem.Obstaculo || outro.projetil) continue;
+                if (Mathf.Abs(outro.transform.position.x - x) < jogador.larguraFaixa * 0.7f &&
+                    Mathf.Abs(outro.transform.position.z - z) < 7f)
+                { ocupado = true; break; }
+            }
+            if (!ocupado) livres.Add(faixa);
+        }
+        if (livres.Count == 0) return;
+
+        int faixaEscolhida = livres[Random.Range(0, livres.Count)];
+        Color brasa = new Color(1f, 0.24f, 0.055f);
+        GameObject meteoro = PolyhedronVisual.Criar("MeteoroEmQueda", transform,
+            new Vector3(jogador.PosicaoXDaFaixa(faixaEscolhida), 6.5f, z),
+            new Vector3(0.92f, 0.78f, 0.92f), 5, brasa);
+        meteoro.transform.localRotation = Random.rotation;
+        Visual.Forma(PrimitiveType.Sphere, "BrasaDoMeteoro", meteoro.transform,
+            new Vector3(0f, 0.45f, 0.02f), Vector3.one * 0.42f,
+            new Color(1f, 0.78f, 0.18f), true);
+        TrackItem item = Registrar(meteoro, TipoItem.Obstaculo, new Vector3(0.82f, 0.82f, 0.82f));
+        item.meteoroCaindo = true;
+        item.velocidadeQuedaMeteoro = Random.Range(7f, 9f);
+    }
+
     TrackItem Registrar(GameObject obj, TipoItem tipo, Vector3 tamanho)
     {
         TrackItem item = obj.AddComponent<TrackItem>();
         item.tipo = tipo;
+        item.formaPoliedro = obj.GetComponent<PolyhedronHitShape>();
         item.tamanho = tamanho;
         itens.Add(item);
         return item;

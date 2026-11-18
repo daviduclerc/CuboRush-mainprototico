@@ -14,3 +14,13 @@ NASA Scientific Visualization Studio, An Elsewhere Starfield (2020).
 https://svs.gsfc.nasa.gov/4856
 
 NASA SVS material is public domain unless the individual item indicates otherwise.
+
+NASA_BlackHole_Loop.mp4
+Black Hole Accretion Disk Visualization, stationary edge-on loop.
+NASA's Goddard Space Flight Center / Jeremy Schnittman (2019).
+https://svs.gsfc.nasa.gov/13326/
+https://svs.gsfc.nasa.gov/vis/a010000/a013300/a013326/BH_AccretionDisk_Sim_Stationary_WebSize.mp4
+BN_BlackHole_Loop.mp4 / BN_Loop_Preview.png
+Fonte: BN.mp4 fornecido pelo usuario (video com credito original Global Data).
+Edicao solicitada: loop suavizado, remocao dos textos e do ponto laranja.
+Usado atualmente no cenario em lugar do video da NASA.

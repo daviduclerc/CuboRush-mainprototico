@@ -74,6 +74,18 @@ public static class Visual
     }
 
     /// <summary>Metal escuro sem emissão, usado nas peças estruturais.</summary>
+    public static Material MatPisoLiso(Color cor)
+    {
+        string chave = "LigaPolida" + ColorUtility.ToHtmlStringRGBA(cor);
+        if (materiais.TryGetValue(chave, out Material pronto) && pronto != null) return pronto;
+        Material material = new Material(MatMetal(cor, 0.88f));
+        material.name = "Piso de liga metalica polida";
+        if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.95f);
+
+        materiais[chave] = material;
+        return material;
+    }
+
     public static Material MatMetal(Color cor, float metalicidade = 0.72f)
     {
         string chave = "Metal" + ColorUtility.ToHtmlStringRGBA(cor) + metalicidade.ToString("F2");

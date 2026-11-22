@@ -5,37 +5,43 @@ public sealed class PolyhedronHitShape : MonoBehaviour
 {
     Vector3[] locais;
     Vector3[] mundo;
-    int lados;
-    public int QuantidadeLados => lados;
-    Renderer visual;
+    int lados, ladosPedidos;
+    /// <summary>Número de lados pedido na criação (identifica a malha compartilhada).</summary>
+    public int QuantidadeLados => ladosPedidos;
+    public FormaObstaculo Forma { get; private set; }
+    /// <summary>Cor do vidro e do neon (usada para refazer o material ao retomar da pausa).</summary>
+    public Color CorVisual { get; set; } = Color.white;
 
-    public Bounds Limites => visual != null ? visual.bounds : new Bounds(transform.position, Vector3.zero);
-
-    public void Inicializar(int quantidadeLados)
+    /// <summary>
+    /// Caixa do prisma lógico. Vem do contorno, e não da malha desenhada, para a
+    /// curvatura visual do poço gravitacional não mexer na colisão.
+    /// </summary>
+    public Bounds Limites
     {
-        lados = quantidadeLados;
+        get
+        {
+            if (locais == null) return new Bounds(transform.position, Vector3.zero);
+            var caixa = new Bounds(transform.TransformPoint(locais[0]), Vector3.zero);
+            for (int i = 1; i < locais.Length; i++) caixa.Encapsulate(transform.TransformPoint(locais[i]));
+            return caixa;
+        }
+    }
+
+    public void Inicializar(int quantidadeLados, FormaObstaculo forma = FormaObstaculo.Regular)
+    {
+        Forma = forma;
+        ladosPedidos = quantidadeLados;
+        Vector3[] contorno = ContornoObstaculo.Obter(forma, quantidadeLados);
+        lados = contorno.Length;
         locais = new Vector3[lados * 2];
         mundo = new Vector3[locais.Length];
-        Vector2 minimo = Vector2.one * float.PositiveInfinity;
-        Vector2 maximo = Vector2.one * float.NegativeInfinity;
         for (int i = 0; i < lados; i++)
         {
-            float a = (90f + i * 360f / lados) * Mathf.Deg2Rad;
-            Vector2 p = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
-            locais[i] = p;
-            minimo = Vector2.Min(minimo, p);
-            maximo = Vector2.Max(maximo, p);
-        }
-        for (int i = 0; i < lados; i++)
-        {
-            Vector3 p = locais[i];
-            p.x = (p.x - minimo.x) / (maximo.x - minimo.x) - 0.5f;
-            p.y = (p.y - minimo.y) / (maximo.y - minimo.y) - 0.5f;
+            Vector3 p = contorno[i];
             p.z = -0.5f;
             locais[i] = p;
             locais[i + lados] = p + Vector3.forward;
         }
-        visual = GetComponent<Renderer>();
     }
 
     public bool Intersects(Bounds caixa)

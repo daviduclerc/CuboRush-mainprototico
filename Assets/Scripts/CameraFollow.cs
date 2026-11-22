@@ -96,7 +96,8 @@ public class CameraFollow : MonoBehaviour
         GameManager jogo = GameManager.Instancia;
         if (cam != null && jogo != null)
         {
-            float alvoFov = Mathf.Lerp(fovNormal, fovRapido, jogo.Dificuldade);
+            // O estilingue gravitacional abre a visão por um instante (sensação de arrancada).
+            float alvoFov = Mathf.Lerp(fovNormal, fovRapido, jogo.Dificuldade) + 9f * jogo.ImpulsoEstilingue;
             cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, alvoFov, 2f * Time.deltaTime);
         }
     }

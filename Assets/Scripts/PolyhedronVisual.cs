@@ -1,10 +1,13 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>Prismas sólidos facetados com malhas compartilhadas.</summary>
+/// <summary>Prismas facetados de vidro transparente com contorno neon, com malhas compartilhadas.</summary>
 public static class PolyhedronVisual
 {
     static readonly Dictionary<Color, Material> materiaisVisiveis = new Dictionary<Color, Material>();
+    static readonly Dictionary<Color, Material> materiaisVidro = new Dictionary<Color, Material>();
+    static readonly Dictionary<Color, Material> materiaisNeon = new Dictionary<Color, Material>();
+    const float LarguraNeon = 0.035f;
 
     static readonly Dictionary<int, Mesh> malhas = new Dictionary<int, Mesh>();
 
@@ -15,16 +18,18 @@ public static class PolyhedronVisual
         // geradas da sessão anterior podem já ter sido destruídas pela Unity.
         malhas.Clear();
         materiaisVisiveis.Clear();
+        materiaisVidro.Clear();
+        materiaisNeon.Clear();
     }
 
     public static GameObject Criar(string nome, Transform pai, Vector3 posicao,
-        Vector3 tamanho, int lados, Color cor)
+        Vector3 tamanho, int lados, Color cor, FormaObstaculo forma = FormaObstaculo.Regular)
     {
         var objeto = new GameObject(nome);
         objeto.transform.SetParent(pai, false);
         objeto.transform.localPosition = posicao;
         objeto.transform.localScale = tamanho;
-        objeto.AddComponent<MeshFilter>().sharedMesh = Malha(lados);
+        objeto.AddComponent<MeshFilter>().sharedMesh = Malha(forma, lados);
         if (!materiaisVisiveis.TryGetValue(cor, out Material material) || material == null)
         {
             Color baseVisivel = Color.Lerp(cor, Color.white, 0.15f);
@@ -36,10 +41,17 @@ public static class PolyhedronVisual
             materiaisVisiveis[cor] = material;
         }
         bool meteoro = nome.Contains("Meteoro");
-        bool ceramica = false;
-        objeto.AddComponent<MeshRenderer>().sharedMaterial = meteoro ? material : TechObstacleMaterials.Obter(ceramica);
-        if (!meteoro) CriarBordas(objeto.transform, lados, ceramica);
-        objeto.AddComponent<PolyhedronHitShape>().Inicializar(lados);
+        var corpo = objeto.AddComponent<MeshRenderer>();
+        corpo.sharedMaterial = meteoro ? material : MaterialVidro(cor);
+        if (!meteoro)
+        {
+            // Vidro não projeta sombra; o contorno neon na cor do obstáculo dá a leitura da forma.
+            corpo.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            CriarBordas(objeto.transform, ContornoObstaculo.Obter(forma, lados), cor);
+        }
+        var colisao = objeto.AddComponent<PolyhedronHitShape>();
+        colisao.Inicializar(lados, forma);
+        colisao.CorVisual = cor;
         return objeto;
     }
 
@@ -52,41 +64,62 @@ public static class PolyhedronVisual
         var filtro = objeto.GetComponent<MeshFilter>();
         var forma = objeto.GetComponent<PolyhedronHitShape>();
         if (filtro != null && filtro.sharedMesh == null && forma != null && forma.QuantidadeLados >= 3)
-            filtro.sharedMesh = Malha(forma.QuantidadeLados);
+            filtro.sharedMesh = Malha(forma.Forma, forma.QuantidadeLados);
         corpo.enabled = true;
         corpo.forceRenderingOff = false;
-        corpo.sharedMaterial = TechObstacleMaterials.Obter(false);
+        corpo.sharedMaterial = forma != null ? MaterialVidro(forma.CorVisual) : TechObstacleMaterials.Obter(false);
     }
 
-    static Mesh Malha(int lados)
+    /// <summary>Vidro transparente tingido com a cor do obstáculo.</summary>
+    static Material MaterialVidro(Color cor)
     {
-        if (malhas.TryGetValue(lados, out Mesh existente) && existente != null) return existente;
-        var contorno = new Vector3[lados];
-        var minimo = Vector3.one * float.PositiveInfinity;
-        var maximo = Vector3.one * float.NegativeInfinity;
-        for (int i = 0; i < lados; i++)
-        {
-            float angulo = (90f + i * 360f / lados) * Mathf.Deg2Rad;
-            contorno[i] = new Vector3(Mathf.Cos(angulo), Mathf.Sin(angulo), 0f);
-            minimo = Vector3.Min(minimo, contorno[i]);
-            maximo = Vector3.Max(maximo, contorno[i]);
-        }
-        for (int i = 0; i < lados; i++)
-            contorno[i] = new Vector3((contorno[i].x - minimo.x) / (maximo.x - minimo.x) - 0.5f,
-                (contorno[i].y - minimo.y) / (maximo.y - minimo.y) - 0.5f, 0f);
+        if (materiaisVidro.TryGetValue(cor, out Material pronto) && pronto != null) return pronto;
+        ReflexoDoAmbiente.Garantir();
+        Shader vidro = Resources.Load<Shader>("Space/VidroNeon");
+        if (vidro == null) return TechObstacleMaterials.Obter(false);
+        var material = new Material(vidro) { name = "Vidro neon dos obstaculos" };
+        material.SetColor("_Cor", Color.Lerp(cor, Color.white, 0.1f));
+        material.SetFloat("_Opacidade", 0.12f);
+        materiaisVidro[cor] = material;
+        return material;
+    }
+
+    /// <summary>Neon das arestas, bem mais claro que o vidro para destacar o contorno.</summary>
+    static Material MaterialNeon(Color cor)
+    {
+        if (materiaisNeon.TryGetValue(cor, out Material pronto) && pronto != null) return pronto;
+        Shader unlit = Shader.Find("Universal Render Pipeline/Unlit");
+        if (unlit == null) return TechObstacleMaterials.Borda(false);
+        var material = new Material(unlit) { name = "Neon das arestas dos obstaculos" };
+        Color brilho = Color.Lerp(cor, Color.white, 0.15f) * 4f;
+        material.color = brilho;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", brilho);
+        materiaisNeon[cor] = material;
+        return material;
+    }
+
+    /// <summary>Malha compartilhada do prisma (contorno de -0,5 a 0,5 puxado em Z).</summary>
+    public static Mesh MalhaPrisma(FormaObstaculo forma, int lados) => Malha(forma, lados);
+
+    static Mesh Malha(FormaObstaculo forma, int lados)
+    {
+        int chave = ContornoObstaculo.Chave(forma, lados);
+        if (malhas.TryGetValue(chave, out Mesh existente) && existente != null) return existente;
+        Vector3[] contorno = ContornoObstaculo.Obter(forma, lados);
+        int quantidade = contorno.Length;
         var vertices = new List<Vector3>();
         var triangulos = new List<int>();
         // Duplica vértices por triângulo para preservar as arestas planas.
-        for (int i = 0; i < lados; i++)
+        for (int i = 0; i < quantidade; i++)
         {
-            Vector3 a = contorno[i], b = contorno[(i + 1) % lados];
+            Vector3 a = contorno[i], b = contorno[(i + 1) % quantidade];
             Vector3 frente = Vector3.back * 0.5f, tras = Vector3.forward * 0.5f;
             Triangulo(vertices, triangulos, frente, b + frente, a + frente);
             Triangulo(vertices, triangulos, tras, a + tras, b + tras);
             Triangulo(vertices, triangulos, a + frente, b + frente, b + tras);
             Triangulo(vertices, triangulos, a + frente, b + tras, a + tras);
         }
-        var malha = new Mesh { name = "Prisma solido " + lados };
+        var malha = new Mesh { name = "Prisma solido " + forma + " " + quantidade };
         malha.SetVertices(vertices);
         malha.SetTriangles(triangulos, 0);
         var uv = new List<Vector2>(vertices.Count);
@@ -105,42 +138,46 @@ public static class PolyhedronVisual
         malha.RecalculateNormals();
         malha.RecalculateTangents();
         malha.RecalculateBounds();
-        malhas[lados] = malha;
+        malhas[chave] = malha;
         return malha;
     }
 
-    static void CriarBordas(Transform pai, int lados, bool ceramica)
+    /// <summary>Neon em todas as arestas do prisma: contorno da frente, de trás e as de profundidade.</summary>
+    static void CriarBordas(Transform pai, Vector3[] contorno, Color cor)
     {
-        var pontos = new Vector3[lados];
-        Vector2 min = Vector2.one * float.PositiveInfinity;
-        Vector2 max = Vector2.one * float.NegativeInfinity;
-        for (int i = 0; i < lados; i++)
-        {
-            float a = (90f + i * 360f / lados) * Mathf.Deg2Rad;
-            pontos[i] = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
-            min = Vector2.Min(min, pontos[i]); max = Vector2.Max(max, pontos[i]);
-        }
+        int lados = contorno.Length;
+        Material neon = MaterialNeon(cor);
         for (int face = 0; face < 2; face++)
         {
-            var linha = new GameObject("ArestaLuminosaDoRevestimento").AddComponent<LineRenderer>();
-            linha.transform.SetParent(pai, false);
-            linha.useWorldSpace = false;
-            linha.loop = true;
-            linha.positionCount = lados;
-            linha.widthMultiplier = 0.018f;
-            linha.sharedMaterial = TechObstacleMaterials.Borda(ceramica);
-            linha.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            linha.receiveShadows = false;
+            LineRenderer linha = NovaAresta(pai, neon, lados, true);
             for (int i = 0; i < lados; i++)
-            {
-                Vector3 p = pontos[i];
-                p.x = ((p.x - min.x) / (max.x - min.x) - 0.5f) * 0.94f;
-                p.y = ((p.y - min.y) / (max.y - min.y) - 0.5f) * 0.94f;
-                p.z = face == 0 ? -0.502f : 0.502f;
-                linha.SetPosition(i, p);
-            }
+                linha.SetPosition(i, NaAresta(contorno[i], face == 0 ? -0.5f : 0.5f));
+        }
+        for (int i = 0; i < lados; i++)
+        {
+            LineRenderer linha = NovaAresta(pai, neon, 2, false);
+            linha.SetPosition(0, NaAresta(contorno[i], -0.5f));
+            linha.SetPosition(1, NaAresta(contorno[i], 0.5f));
         }
     }
+
+    static LineRenderer NovaAresta(Transform pai, Material neon, int pontos, bool fechada)
+    {
+        var linha = new GameObject("ArestaNeonDoVidro").AddComponent<LineRenderer>();
+        linha.transform.SetParent(pai, false);
+        linha.useWorldSpace = false;
+        linha.loop = fechada;
+        linha.positionCount = pontos;
+        linha.widthMultiplier = LarguraNeon;
+        linha.numCornerVertices = 2;
+        linha.sharedMaterial = neon;
+        linha.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        linha.receiveShadows = false;
+        return linha;
+    }
+
+    // Levemente para dentro, para o neon ficar sobre a aresta sem vazar da forma.
+    static Vector3 NaAresta(Vector3 p, float z) => new Vector3(p.x * 0.985f, p.y * 0.985f, z * 0.985f);
 
     static void Triangulo(List<Vector3> vertices, List<int> indices, Vector3 a, Vector3 b, Vector3 c)
     {

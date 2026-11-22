@@ -1,6 +1,12 @@
 Shader "CuboRush/BlackHoleVideo"
 {
-    Properties { _MainTex ("Video do buraco negro", 2D) = "black" {} _Aspect ("Proporcao do video", Float) = 1.777778 }
+    Properties
+    {
+        _MainTex ("Video do buraco negro", 2D) = "black" {}
+        _Aspect ("Proporcao do video", Float) = 1.777778
+        _Contraste ("Contraste do disco", Range(1, 2.5)) = 1.6
+        _Realce ("Brilho extra nas partes mais quentes", Range(0, 3)) = 0.55
+    }
     SubShader
     {
         Tags { "RenderPipeline"="UniversalPipeline" "Queue"="Transparent" "RenderType"="Transparent" }
@@ -15,6 +21,8 @@ Shader "CuboRush/BlackHoleVideo"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             CBUFFER_START(UnityPerMaterial)
             float _Aspect;
+            float _Contraste;
+            float _Realce;
             CBUFFER_END
             TEXTURE2D(_MainTex);
             SAMPLER(sampler_MainTex);
@@ -35,7 +43,13 @@ Shader "CuboRush/BlackHoleVideo"
                 float sombra = 1.0 - smoothstep(0.21, 0.235, length(centro));
                 float luz = max(color.r, max(color.g, color.b));
                 float alpha = max(sombra, smoothstep(0.003, 0.065, luz));
-                return half4(color, alpha);
+
+                // Gradação: meios-tons mais profundos (o disco deixa de parecer uma placa lisa)
+                // e só o gás mais quente passa de 1, para o bloom fazer o brilho em volta.
+                half3 cor = pow(max(color, 0.0h), _Contraste);
+                cor *= lerp(half3(1.0h, 0.86h, 0.80h), half3(1.0h, 1.0h, 1.0h), saturate(luz * 1.4h));
+                cor *= 0.88h + smoothstep(0.62h, 1.0h, luz) * _Realce;
+                return half4(cor, alpha);
             }
             ENDHLSL
         }

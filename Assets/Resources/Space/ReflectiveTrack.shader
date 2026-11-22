@@ -38,7 +38,8 @@ Shader "CuboRush/ReflectiveTrack"
                 o.normal=n;
                 o.reflexo=mul(_TrackReflectionVP,float4(o.world,1));
                 // Coordenadas antes da curvatura: a grade desenhada com elas se curva junto com o piso.
-                o.malha=float3(original.xz,deslocamento);
+                // A grade forte só aparece na deformação local; a curva do horizonte ganha um traço leve.
+                o.malha=float3(original.xz,PocoDeslocamentoLocal(original.xz)+min(CampoQueda(original.z)*0.08,0.12));
                 return o;
             }
             half4 frag(V i):SV_Target {

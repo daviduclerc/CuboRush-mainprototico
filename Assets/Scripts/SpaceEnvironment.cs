@@ -15,42 +15,90 @@ public class SpaceEnvironment : MonoBehaviour
     static readonly Dictionary<string, Texture2D> mapas = new Dictionary<string, Texture2D>();
 
     // Céu profundo quase preto, com estrelas discretas e sem nebulosa colorida.
+    static Texture2D ceuEmCache;
+
     public static Texture2D CriarCeuRealista()
     {
-        const int largura = 1024, altura = 512;
+        // O céu é gerado uma vez e reaproveitado a cada reinício da partida.
+        if (ceuEmCache != null) return ceuEmCache;
+
+        // Resolução alta + filtro bilinear: cada estrela vira um ponto redondo e nítido
+        // em vez dos quadradinhos que apareciam com a textura pequena ampliada.
+        const int largura = 4096, altura = 2048;
         Texture2D tex = new Texture2D(largura, altura, TextureFormat.RGBA32, false);
         tex.name = "CeuEspacialProfundo";
-        tex.wrapMode = TextureWrapMode.Repeat;
-        tex.filterMode = FilterMode.Point;
-        Color[] pixels = new Color[largura * altura];
-        Color vazio = new Color(0.0015f, 0.002f, 0.005f, 1f);
+        tex.wrapModeU = TextureWrapMode.Repeat;
+        tex.wrapModeV = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+        tex.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        Color32[] pixels = new Color32[largura * altura];
+        Color32 vazio = new Color32(0, 1, 2, 255);
         for (int i = 0; i < pixels.Length; i++) pixels[i] = vazio;
 
         // Estrelas pequenas e espaçadas; o contraste vem do buraco negro e da pista.
-        Random.State estado = Random.state;
-        Random.InitState(24681);
-        for (int i = 0; i < 1250; i++)
+        // Cores pela temperatura: azuladas, brancas, amareladas e algumas alaranjadas.
+        Color[] temperaturas =
         {
-            int x = Random.Range(0, largura);
-            int y = Random.Range(0, altura);
-            float brilho = i % 90 == 0 ? Random.Range(0.72f, 1f) : Random.Range(0.20f, 0.52f);
-            Color estrela = i % 8 == 0
-                ? new Color(1f, 0.88f, 0.72f, 1f) * brilho
-                : new Color(0.72f, 0.82f, 1f, 1f) * brilho;
-            pixels[y * largura + x] = estrela;
-            if (i % 90 == 0)
+            new Color(0.70f, 0.80f, 1f), new Color(0.82f, 0.88f, 1f), new Color(1f, 0.97f, 0.92f),
+            new Color(1f, 0.90f, 0.74f), new Color(1f, 0.76f, 0.55f)
+        };
+        System.Random sorteio = new System.Random(24681);
+        float Sorteio(float min, float max) => min + (max - min) * (float)sorteio.NextDouble();
+
+        for (int i = 0; i < 3200; i++)
+        {
+            float x = Sorteio(0f, largura), y = Sorteio(0f, altura);
+            float chance = Sorteio(0f, 1f);
+            Color cor = temperaturas[(int)Mathf.Min(temperaturas.Length - 1, Mathf.Pow(Sorteio(0f, 1f), 1.6f) * temperaturas.Length)];
+            if (i % 3 == 0) cor = temperaturas[1];
+            if (chance < 0.012f)
             {
-                if (x > 0) pixels[y * largura + x - 1] = estrela * 0.35f;
-                if (x + 1 < largura) pixels[y * largura + x + 1] = estrela * 0.35f;
-                if (y > 0) pixels[(y - 1) * largura + x] = estrela * 0.35f;
-                if (y + 1 < altura) pixels[(y + 1) * largura + x] = estrela * 0.35f;
+                // Poucas estrelas brilhantes, com um halo discreto.
+                Pincelar(pixels, largura, altura, x, y, Sorteio(2.6f, 3.6f), cor * 0.10f);
+                Pincelar(pixels, largura, altura, x, y, Sorteio(0.85f, 1.05f), cor * Sorteio(0.85f, 1f));
+            }
+            else if (chance < 0.12f)
+            {
+                Pincelar(pixels, largura, altura, x, y, Sorteio(0.7f, 0.9f), cor * Sorteio(0.45f, 0.75f));
+            }
+            else
+            {
+                float brilho = Mathf.Lerp(0.12f, 0.42f, Sorteio(0f, 1f) * Sorteio(0f, 1f));
+                Pincelar(pixels, largura, altura, x, y, Sorteio(0.5f, 0.68f), cor * brilho);
             }
         }
-        Random.state = estado;
 
-        tex.SetPixels(pixels);
+        tex.SetPixels32(pixels);
         tex.Apply(false, true);
+        ceuEmCache = tex;
         return tex;
+    }
+
+    /// <summary>Soma um ponto de luz gaussiano na textura do céu (com volta horizontal).</summary>
+    static void Pincelar(Color32[] pixels, int largura, int altura, float cx, float cy, float sigma, Color cor)
+    {
+        int raio = Mathf.CeilToInt(sigma * 3f);
+        float inverso = 1f / (2f * sigma * sigma);
+        int x0 = Mathf.FloorToInt(cx), y0 = Mathf.FloorToInt(cy);
+        for (int dy = -raio; dy <= raio; dy++)
+        {
+            int y = y0 + dy;
+            if (y < 0 || y >= altura) continue;
+            float ddy = y + 0.5f - cy;
+            for (int dx = -raio; dx <= raio; dx++)
+            {
+                float ddx = x0 + dx + 0.5f - cx;
+                float k = Mathf.Exp(-(ddx * ddx + ddy * ddy) * inverso);
+                if (k < 0.01f) continue;
+                int x = ((x0 + dx) % largura + largura) % largura;
+                int indice = y * largura + x;
+                Color32 atual = pixels[indice];
+                atual.r = (byte)Mathf.Min(255f, atual.r + cor.r * k * 255f);
+                atual.g = (byte)Mathf.Min(255f, atual.g + cor.g * k * 255f);
+                atual.b = (byte)Mathf.Min(255f, atual.b + cor.b * k * 255f);
+                pixels[indice] = atual;
+            }
+        }
     }
 
     void Update()

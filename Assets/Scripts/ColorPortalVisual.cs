@@ -1,124 +1,155 @@
 using UnityEngine;
 using UnityEngine.Rendering;
 
-/// <summary>Portal de cor com aro hexagonal e campo de energia transparente.</summary>
+/// <summary>
+/// Muro de cor: parede sólida pintada inteira de uma cor, com acabamento de espelho
+/// colorido (reflete o céu, a pista e o Sol), ocupando a faixa inteira e rente ao chão.
+/// Só passa o Sol da mesma cor: quando ele chega perto com a cor certa, o muro afunda no
+/// piso e abre a passagem; com a cor errada ele continua de pé e pisca ao ser atravessado.
+/// </summary>
 public sealed class ColorPortalVisual : MonoBehaviour
 {
-    static Mesh campoHexagonal;
-    static readonly Material[] campos = new Material[4];
+    const float VelocidadeAbertura = 8f;     // 1 / segundos para abrir ou fechar
+    const float AntecedenciaAbertura = 0.3f; // segundos antes do contato em que começa a abrir
+
+    static readonly Material[] espelhos = new Material[4];
     static readonly Material[] neons = new Material[4];
-    Renderer campo;
-    LineRenderer aro;
+    static PlayerController jogadorEmCache;
+    static readonly int idClarao = Shader.PropertyToID("_Clarao");
+    static readonly int idEmissao = Shader.PropertyToID("_EmissionColor");
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ReiniciarCache()
+    {
+        for (int i = 0; i < espelhos.Length; i++) espelhos[i] = neons[i] = null;
+        jogadorEmCache = null;
+    }
+
+    Transform muro;
+    Renderer corpo;
     MaterialPropertyBlock propriedades;
     Color cor;
-    float pulso;
-    float falha;
+    int corId;
+    float pulso, falha, abertura;
+    bool usandoEspelho;
+    bool atravessadoComCorCerta;
 
     public static GameObject Criar(Transform pai, Vector3 posicao, Vector3 tamanho, int corId)
     {
-        var objeto = new GameObject("PortalHexagonal" + corId);
+        var objeto = new GameObject("MuroDeCor" + corId);
         objeto.transform.SetParent(pai, false);
         objeto.transform.localPosition = posicao;
         objeto.transform.localScale = tamanho;
-        Vector3[] pontos = Contorno();
-        if (campoHexagonal == null)
-        {
-            var vertices = new Vector3[7];
-            var uv = new Vector2[7];
-            var triangles = new int[18];
-            uv[0] = new Vector2(0.5f, 0.5f);
-            for (int i = 0; i < 6; i++)
-            {
-                vertices[i + 1] = pontos[i];
-                uv[i + 1] = new Vector2(pontos[i].x + 0.5f, pontos[i].y + 0.5f);
-                triangles[i * 3] = 0;
-                triangles[i * 3 + 1] = (i + 1) % 6 + 1;
-                triangles[i * 3 + 2] = i + 1;
-            }
-            campoHexagonal = new Mesh { name = "Campo de energia hexagonal" };
-            campoHexagonal.vertices = vertices;
-            campoHexagonal.uv = uv;
-            campoHexagonal.triangles = triangles;
-            campoHexagonal.RecalculateNormals();
-            campoHexagonal.RecalculateBounds();
-            campoHexagonal.bounds = new Bounds(Vector3.zero, Vector3.one);
-        }
         Color cor = PlayerController.Cores[corId];
-        if (campos[corId] == null)
-        {
-            campos[corId] = new Material(Resources.Load<Shader>("Gameplay/ColorPortal"));
-            campos[corId].SetColor("_Tint", cor);
-            neons[corId] = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            neons[corId].color = cor * 3f;
-        }
-        objeto.AddComponent<MeshFilter>().sharedMesh = campoHexagonal;
-        Renderer renderer = objeto.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = campos[corId];
-        renderer.shadowCastingMode = ShadowCastingMode.Off;
-        renderer.receiveShadows = false;
+        GarantirMateriais(corId, cor);
 
-        Material metal = Visual.MatMetal(new Color(0.21f, 0.26f, 0.32f), 0.6f);
-        for (int i = 0; i < 6; i++)
-        {
-            Vector3 a = pontos[i], b = pontos[(i + 1) % 6];
-            GameObject barra = Visual.Forma(PrimitiveType.Cube, "SegmentoDoAro", objeto.transform,
-                (a + b) * 0.5f, new Vector3(0.048f, Vector3.Distance(a, b), 0.55f), Color.gray, raio: 0f);
-            barra.transform.localRotation = Quaternion.FromToRotation(Vector3.up, b - a);
-            barra.GetComponent<Renderer>().sharedMaterial = metal;
-            GameObject emissor = Visual.Forma(PrimitiveType.Cube, "EmissorDoPortal", objeto.transform,
-                a, new Vector3(0.07f, 0.06f, 0.7f), cor, true, raio: 0f);
-            emissor.GetComponent<Renderer>().sharedMaterial = neons[corId];
-        }
-        var luz = new GameObject("AroDeEnergia").AddComponent<LineRenderer>();
-        luz.transform.SetParent(objeto.transform, false);
-        luz.useWorldSpace = false;
-        luz.loop = true;
-        luz.positionCount = 6;
-        luz.widthMultiplier = 0.024f;
-        luz.sharedMaterial = neons[corId];
-        luz.shadowCastingMode = ShadowCastingMode.Off;
-        for (int i = 0; i < 6; i++) luz.SetPosition(i, pontos[i] * 0.94f + Vector3.back * 0.30f);
+        // Tudo que se vê fica num pivô filho, que afunda no chão ao abrir.
+        Transform pivo = new GameObject("Muro").transform;
+        pivo.SetParent(objeto.transform, false);
+
+        var corpoObjeto = new GameObject("EspelhoDoMuro");
+        corpoObjeto.transform.SetParent(pivo, false);
+        corpoObjeto.AddComponent<MeshFilter>().sharedMesh = PolyhedronVisual.MalhaPrisma(FormaObstaculo.Quadrado, 4);
+        var render = corpoObjeto.AddComponent<MeshRenderer>();
+        render.sharedMaterial = espelhos[corId];
+
+        // Faixas luminosas no topo e nas laterais: cada faixa do muro se destaca da vizinha.
+        Vector3 espessuraTopo = new Vector3(1.0f, 0.07f / tamanho.y, 1.12f);
+        Vector3 espessuraLado = new Vector3(0.05f / tamanho.x, 1.0f, 1.12f);
+        Emissor(pivo, "CristaDoMuro", new Vector3(0f, 0.5f, 0f), espessuraTopo, corId);
+        Emissor(pivo, "ArestaEsquerdaDoMuro", new Vector3(-0.5f, 0f, 0f), espessuraLado, corId);
+        Emissor(pivo, "ArestaDireitaDoMuro", new Vector3(0.5f, 0f, 0f), espessuraLado, corId);
+
         var efeito = objeto.AddComponent<ColorPortalVisual>();
-        efeito.campo = renderer;
-        efeito.aro = luz;
+        efeito.muro = pivo;
+        efeito.corpo = render;
         efeito.cor = cor;
+        efeito.corId = corId;
         efeito.propriedades = new MaterialPropertyBlock();
-        objeto.AddComponent<PolyhedronHitShape>().Inicializar(6);
+        efeito.usandoEspelho = espelhos[corId].HasProperty(idClarao);
+        objeto.AddComponent<PolyhedronHitShape>().Inicializar(4, FormaObstaculo.Quadrado);
         return objeto;
     }
 
-    static Vector3[] Contorno()
+    static void Emissor(Transform pai, string nome, Vector3 posicao, Vector3 escala, int corId)
     {
-        var pontos = new Vector3[6];
-        Vector2 minimo = Vector2.one * float.PositiveInfinity;
-        Vector2 maximo = Vector2.one * float.NegativeInfinity;
-        for (int i = 0; i < 6; i++)
-        {
-            float a = (90f + i * 60f) * Mathf.Deg2Rad;
-            pontos[i] = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
-            minimo = Vector2.Min(minimo, pontos[i]); maximo = Vector2.Max(maximo, pontos[i]);
-        }
-        for (int i = 0; i < 6; i++)
-            pontos[i] = new Vector3((pontos[i].x - minimo.x) / (maximo.x - minimo.x) - 0.5f,
-                (pontos[i].y - minimo.y) / (maximo.y - minimo.y) - 0.5f, 0f);
-        return pontos;
+        GameObject faixa = Visual.Forma(PrimitiveType.Cube, nome, pai, posicao, escala, Color.white, true, raio: 0f);
+        Renderer r = faixa.GetComponent<Renderer>();
+        r.sharedMaterial = neons[corId];
+        r.shadowCastingMode = ShadowCastingMode.Off;
     }
 
     public void Atravessar(bool corCorreta)
     {
         pulso = 1f;
         falha = corCorreta ? 0f : 1f;
+        if (corCorreta) atravessadoComCorCerta = true;
     }
 
     void Update()
     {
-        pulso = Mathf.MoveTowards(pulso, 0f, Time.deltaTime * 3f);
-        propriedades.SetFloat("_Pulse", pulso);
-        propriedades.SetFloat("_Failure", falha);
-        campo.SetPropertyBlock(propriedades);
-        propriedades.Clear();
-        propriedades.SetColor("_BaseColor", cor * (3f + pulso * 2f));
-        aro.SetPropertyBlock(propriedades);
-        propriedades.Clear();
+        // Abre quando o Sol da mesma cor está para chegar; fecha se ele trocar de cor antes.
+        PlayerController jogador = Jogador();
+        GameManager jogo = GameManager.Instancia;
+        bool abrir = atravessadoComCorCerta;
+        if (!abrir && jogador != null && jogador.CorId == corId)
+        {
+            float velocidade = jogo != null ? jogo.Velocidade : 10f;
+            float distancia = transform.position.z - jogador.transform.position.z;
+            abrir = distancia > -1f && distancia < Mathf.Max(2.5f, velocidade * AntecedenciaAbertura);
+        }
+        float dt = Time.deltaTime;
+        abertura = Mathf.MoveTowards(abertura, abrir ? 1f : 0f, VelocidadeAbertura * dt);
+        float descida = Mathf.SmoothStep(0f, 1f, abertura);
+        // Afunda um pouco além da própria altura para sumir inteiro dentro do piso.
+        muro.localPosition = new Vector3(0f, -1.05f * descida, 0f);
+
+        pulso = Mathf.MoveTowards(pulso, 0f, dt * 3f);
+        // Cor errada: o espelho pisca em branco quente ao ser atravessado.
+        propriedades.SetFloat(idClarao, pulso * falha);
+        if (!usandoEspelho) propriedades.SetColor(idEmissao, Color.Lerp(cor * 0.6f, Color.white * 4f, pulso * falha));
+        corpo.SetPropertyBlock(propriedades);
+    }
+
+    static PlayerController Jogador()
+    {
+        if (jogadorEmCache == null) jogadorEmCache = Object.FindAnyObjectByType<PlayerController>();
+        return jogadorEmCache;
+    }
+
+    // ---------- Materiais ----------
+
+    static void GarantirMateriais(int corId, Color cor)
+    {
+        if (espelhos[corId] != null && neons[corId] != null) return;
+        ReflexoDoAmbiente.Garantir();
+
+        Shader espelho = Resources.Load<Shader>("Space/MuroEspelho");
+        Material material;
+        if (espelho != null)
+        {
+            material = new Material(espelho);
+            material.SetColor("_Cor", cor);
+            material.SetFloat("_Brilho", 0.4f);
+        }
+        else
+        {
+            // Reserva: metal liso e polido pintado da cor do muro.
+            Shader lit = Shader.Find("Universal Render Pipeline/Lit");
+            material = new Material(lit != null ? lit : Shader.Find("Standard"));
+            material.color = cor;
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 1f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.95f);
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", cor * 0.6f);
+        }
+        material.name = "Muro espelhado " + corId;
+        espelhos[corId] = material;
+
+        Shader unlit = Shader.Find("Universal Render Pipeline/Unlit");
+        var neon = new Material(unlit != null ? unlit : material.shader) { name = "Crista luminosa do muro " + corId };
+        neon.color = cor * 3f;
+        if (neon.HasProperty("_BaseColor")) neon.SetColor("_BaseColor", cor * 3f);
+        neons[corId] = neon;
     }
 }

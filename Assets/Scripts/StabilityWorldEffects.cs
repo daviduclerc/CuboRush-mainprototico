@@ -27,6 +27,8 @@ public sealed class StabilityWorldEffects : MonoBehaviour
     float proximoMeteoroZ;
     bool faseMeteoros;
     bool colapsoFinal;
+    // Vinheta sempre presente, bem suave, para guiar o olhar ao centro da pista.
+    const float VinhetaBase = 0.24f;
 
     void Start()
     {
@@ -53,9 +55,14 @@ public sealed class StabilityWorldEffects : MonoBehaviour
         ajustesCor.colorFilter.overrideState = true;
         ajustesCor.saturation.overrideState = true;
         ajustesCor.postExposure.overrideState = true;
+        // Um pouco mais de contraste deixa o vazio mais profundo e o neon mais vivo.
+        ajustesCor.contrast.overrideState = true;
+        ajustesCor.contrast.value = 12f;
         vinheta = volume.profile.Add<Vignette>(true);
         vinheta.intensity.overrideState = true;
         vinheta.color.overrideState = true;
+        vinheta.smoothness.overrideState = true;
+        vinheta.smoothness.value = 0.45f;
         aberracao = volume.profile.Add<ChromaticAberration>(true);
         aberracao.intensity.overrideState = true;
     }
@@ -102,35 +109,42 @@ public sealed class StabilityWorldEffects : MonoBehaviour
             return;
         }
 
+        // Regra das cores: nada aqui muda a matiz do que está na pista. Moedas, portais e o
+        // Sol continuam com a cor exata; o perigo é mostrado pelo fundo, pelas bordas da tela,
+        // pelo tremor e pelo batimento, que tem o mesmo ritmo no Sol e na vinheta.
+        float batida = jogador != null ? jogador.BatimentoPerigo : 0f;
+
         if (ceu != null)
         {
-            float calor = giganteAtiva ? Mathf.Lerp(0f, 0.34f, faseGigante) : 0f;
-            if (perigo <= 30f) calor = Mathf.Lerp(0.34f, 0.56f, fasePulso);
+            // Só o céu distante esquenta; ele fica atrás de tudo e não confunde as cores.
+            float calor = giganteAtiva ? Mathf.Lerp(0f, 0.22f, faseGigante) : 0f;
+            if (perigo <= 30f) calor = Mathf.Lerp(0.22f, 0.34f, fasePulso);
             ceu.SetColor("_Tint", Color.Lerp(corCeuOriginal, new Color(1f, 0.48f, 0.26f), calor));
             ceu.SetFloat("_Exposure", exposicaoOriginal * (1f - 0.28f * fasePulso));
         }
 
-        float filtroQuente = giganteAtiva ? Mathf.Lerp(0f, 0.30f, faseGigante) : 0f;
-        float pulsoVisual = 0f;
-        if (perigo <= 30f)
-            pulsoVisual = (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f)) * fasePulso;
+        float pulsoVisual = batida * fasePulso;
         if (ajustesCor != null)
         {
-            float filtro = Mathf.Clamp01(filtroQuente + fasePulso * 0.24f + pulsoVisual * 0.12f);
-            ajustesCor.colorFilter.value = Color.Lerp(Color.white, new Color(1f, 0.56f, 0.47f), filtro);
-            ajustesCor.saturation.value = Mathf.Lerp(0f, -24f, fasePulso);
-            ajustesCor.postExposure.value = -0.8f * fasePulso;
+            // Sem filtro de cor, sem tirar saturação: só escurece um pouco o mundo no fim.
+            ajustesCor.colorFilter.value = Color.white;
+            ajustesCor.saturation.value = 8f;
+            ajustesCor.postExposure.value = -0.25f * fasePulso;
         }
         if (vinheta != null)
         {
-            vinheta.intensity.value = 0.10f * faseGigante + 0.35f * fasePulso + 0.10f * pulsoVisual;
-            vinheta.color.value = Color.Lerp(Color.black, new Color(0.23f, 0.012f, 0.025f), fasePulso);
+            // As bordas da tela são o alarme: fecham aos poucos e pulsam no batimento.
+            // Cor quase preta (vinho bem escuro) para escurecer sem tingir a pista.
+            vinheta.intensity.value = VinhetaBase + 0.08f * faseGigante + 0.16f * fasePulso + 0.14f * batida;
+            vinheta.color.value = Color.Lerp(Color.black, new Color(0.16f, 0.0f, 0.015f),
+                Mathf.Clamp01(faseGigante * 0.5f + fasePulso * 0.5f + batida * 0.5f));
         }
-        if (aberracao != null)
-            aberracao.intensity.value = 0.18f * faseGigante + 0.25f * fasePulso + 0.12f * pulsoVisual;
+        // A aberração cromática separava as cores das moedas; fica desligada na partida.
+        if (aberracao != null) aberracao.intensity.value = 0f;
 
+        // A luz ambiente esquenta pouco: só o metal da pista sente, as moedas e portais brilham sozinhos.
         RenderSettings.ambientLight = Color.Lerp(luzAmbienteOriginal,
-            new Color(0.44f, 0.12f, 0.06f), Mathf.Clamp01(filtroQuente + fasePulso * 0.55f));
+            new Color(0.30f, 0.10f, 0.06f), Mathf.Clamp01(faseGigante * 0.20f + fasePulso * 0.25f));
         AtualizarGigante(giganteAtiva, faseGigante, fasePulso, pulsoVisual);
         AtualizarMeteoros(jogo, perigo);
 
@@ -167,7 +181,8 @@ public sealed class StabilityWorldEffects : MonoBehaviour
         if (fasePulso > 0f) diametro *= 1f + pulso * 0.06f;
         gigante.localScale = Vector3.one * diametro;
         Color cor = Color.Lerp(new Color(1f, 0.31f, 0.055f), new Color(0.72f, 0.012f, 0.035f), fasePulso);
-        cor *= 0.88f + pulso * 0.28f;
+        // Mais escura: é cenário ao fundo e não pode competir com as moedas vermelhas.
+        cor *= 0.55f + pulso * 0.12f;
         materialGigante.color = cor;
         if (materialGigante.HasProperty("_BaseColor")) materialGigante.SetColor("_BaseColor", cor);
         if (materialGigante.HasProperty("_EmissionColor")) materialGigante.SetColor("_EmissionColor", cor * 2.2f);

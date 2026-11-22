@@ -31,7 +31,8 @@ public static class PocoGravitacional
     static float intensidadeAnterior;
 
     /// <summary>Há alguma curvatura no espaço neste quadro?</summary>
-    public static bool Ativo => Profundidade > 0.0005f || Mathf.Abs(AmplitudeOnda) > 0.0005f;
+    public static bool Ativo => Profundidade > 0.0005f || Mathf.Abs(AmplitudeOnda) > 0.0005f ||
+        CampoGravitacional.OndaAtiva || CampoGravitacional.BuracoAtivo;
 
     static readonly int idCentro = Shader.PropertyToID("_PocoCentro");
     static readonly int idForma = Shader.PropertyToID("_PocoForma");
@@ -113,12 +114,15 @@ public static class PocoGravitacional
         float onda = AmplitudeOnda * 2f * u * Mathf.Exp(-u * u);
 
         float fixacao = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(MeiaLargura - 0.9f, MeiaLargura, Mathf.Abs(x)));
-        return (funil + onda) * fixacao;
+        // A onda gravitacional plana e o mini buraco negro somam aqui; a curvatura do
+        // horizonte é aplicada por fora (CampoGravitacional.Queda), pois dobra a pista inteira.
+        return (funil + onda + CampoGravitacional.DeslocamentoLocal(x, z)) * fixacao;
     }
 
     /// <summary>O poço ou a onda chegam perto de algo em "posicao" com este raio no plano?</summary>
     public static bool Alcanca(Vector3 posicao, float raio)
     {
+        if (CampoGravitacional.Alcanca(posicao, raio)) return true;
         if (Profundidade > 0.0005f)
         {
             float dx = posicao.x - Centro.x, dz = posicao.z - Centro.y;

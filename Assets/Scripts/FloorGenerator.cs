@@ -48,6 +48,8 @@ public class FloorGenerator : MonoBehaviour
     {
         // Começa um pedaço atrás do jogador para a câmera não ver o vazio.
         float zInicial = jogador != null ? jogador.position.z : 0f;
+        // Espelhos e vidros refletem as linhas neon na posição certa das faixas.
+        ReflexoDoAmbiente.DefinirPista(quantidadeFaixas * larguraFaixa / 2f, larguraFaixa);
         proximoZ = zInicial - comprimentoPedaco;
 
         for (int i = 0; i < quantidadePedacos; i++)
@@ -125,6 +127,9 @@ public class FloorGenerator : MonoBehaviour
                 new Vector3(lado * (larguraTotal / 2f + 0.13f), -0.015f, comprimentoPedaco / 2f),
                 new Vector3(0.22f, 0.16f, comprimentoPedaco), metal, false, raio: 0.025f);
             viga.GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(metal, 0.65f);
+            // Malha dividida ao longo do comprimento para a viga se curvar com a atração do buraco negro.
+            viga.GetComponent<MeshFilter>().sharedMesh = CurvaturaDaMalha.CuboSubdividido(40);
+            viga.transform.localScale = new Vector3(0.22f, 0.16f, comprimentoPedaco);
 
             // Guarda-corpo de uma pista orbital: placas de liga escura e filete emissivo.
             float bordaX = lado * (larguraTotal / 2f + 0.27f);
@@ -132,6 +137,8 @@ public class FloorGenerator : MonoBehaviour
                 new Vector3(bordaX, 0.30f, comprimentoPedaco / 2f),
                 new Vector3(0.12f, 0.58f, comprimentoPedaco), new Color(0.035f, 0.055f, 0.095f), false, raio: 0.035f);
             guarda.GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(new Color(0.035f, 0.055f, 0.095f), 0.82f);
+            guarda.GetComponent<MeshFilter>().sharedMesh = CurvaturaDaMalha.CuboSubdividido(40);
+            guarda.transform.localScale = new Vector3(0.12f, 0.58f, comprimentoPedaco);
 
             // Travessas curtas dão escala e profundidade às laterais sem bloquear a pista.
             for (float z = 1f; z < comprimentoPedaco; z += 4f)
@@ -141,6 +148,8 @@ public class FloorGenerator : MonoBehaviour
                     metal, false, raio: 0.02f).GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(metal, 0.72f);
             }
         }
+        // Vigas, guarda-corpos e suportes descem junto com o piso quando a pista se curva lá na frente.
+        raiz.gameObject.AddComponent<CurvaturaDaMalha>();
         return raiz;
     }
 

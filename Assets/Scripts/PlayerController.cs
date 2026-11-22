@@ -37,6 +37,16 @@ public class PlayerController : MonoBehaviour
     [Header("Deslize")]
     public float duracaoDeslize = 0.7f;
 
+    [Header("Poço gravitacional (ao abaixar)")]
+    [Tooltip("Profundidade do funil embaixo do Sol, em unidades de mundo.")]
+    public float profundidadePoco = 0.75f;
+    [Tooltip("Raio do fundo do funil: maior = poço mais largo e suave.")]
+    public float nucleoPoco = 1.6f;
+    [Tooltip("Até que distância do Sol o espaço se curva.")]
+    public float alcancePoco = 5f;
+    [Tooltip("Altura da onda que percorre o espaço quando o Sol afunda e quando sai.")]
+    public float amplitudeOndaPoco = 0.18f;
+
     [Header("Toque")]
     [Tooltip("Distância mínima (em pixels) para contar como deslize do dedo.")]
     public float deslizeMinimo = 50f;
@@ -63,7 +73,8 @@ public class PlayerController : MonoBehaviour
     }
     public Transform VisualSolar => visualSolarRaiz;
     public bool Deslizando { get; private set; }
-    public float ProporcaoAbaixado => 1f - achatamento * 0.30f;
+    /// <summary>0 = espaço plano, 1 = poço gravitacional totalmente aberto durante o deslize.</summary>
+    public float Afundamento => Mathf.SmoothStep(0f, 1f, achatamento);
     public bool NoChao => altura <= 0f && velocidadeY <= 0f;
     public float VelocidadeVertical => velocidadeY;
     public bool Invencivel => Time.time < invencivelAte;
@@ -86,7 +97,7 @@ public class PlayerController : MonoBehaviour
     float esperaPulo;      // guarda o comando de pulo por um instante
     bool deslizarAoPousar;
     float giro;
-    float achatamento;     // 0 = normal, 1 = achatado durante o deslize
+    float achatamento;     // 0 = normal, 1 = afundado durante o deslize
     float giroDeslize;
     float rolamentoLateral;
     float giroSolar;
@@ -160,6 +171,7 @@ public class PlayerController : MonoBehaviour
             gameObject.AddComponent<SolarMotionFlames>();
         rodaCores = GetComponent<ColorWheelUI>();
         if (rodaCores != null) { rodaCores.Cancelar(); Destroy(rodaCores); rodaCores = null; }
+        PocoGravitacional.Reiniciar();
 
     }
 
@@ -247,9 +259,12 @@ public class PlayerController : MonoBehaviour
             if (Mathf.Approximately(giroDeslize, encaixe) && achatamento <= 0f) giroDeslize = 0f;
         }
 
-        // Ao abaixar, o Sol encolhe por igual e volta suavemente ao tamanho base.
+        // Ao abaixar, o Sol pesa sobre a pista: o próprio chão afunda em funil ao redor
+        // dele, como nos diagramas de buraco negro, e as paredes próximas acompanham.
         // As deformações dos eixos ficam reservadas para o preparo e o impulso do pulo.
-        float escalaAbaixado = 1f - achatamento * 0.30f;
+        PocoGravitacional.Atualizar(new Vector2(p.x, p.z), Afundamento, profundidadePoco, nucleoPoco,
+            alcancePoco, quantidadeFaixas * larguraFaixa / 2f, amplitudeOndaPoco, Time.deltaTime);
+        float afundamento = PocoGravitacional.Deslocamento(p.x, p.z);
         float squashLateral = preparandoPulo ? 0.22f : 0f;
         float squashVertical = preparandoPulo ? 0.18f : 0f;
         if (!NoChao && tempoDecolagem > 0f)
@@ -321,19 +336,21 @@ public class PlayerController : MonoBehaviour
             // O pai aplica a compressão no eixo vertical fixo da pista; a esfera
             // gira como filha sem girar junto o eixo do squash.
             deformacaoSolar.localScale = new Vector3(
-                escalaPerigo * escalaAbaixado * (1f + squashVertical * 0.50f + squashLateral),
-                escalaPerigo * escalaAbaixado * (1f - squashVertical),
-                escalaPerigo * escalaAbaixado * (1f + squashVertical * 0.50f + squashLateral));
+                escalaPerigo * (1f + squashVertical * 0.50f + squashLateral),
+                escalaPerigo * (1f - squashVertical),
+                escalaPerigo * (1f + squashVertical * 0.50f + squashLateral));
             visualSolarRaiz.localScale = escalaSolarOriginal;
             visualSolarRaiz.localRotation = Quaternion.AngleAxis(rolamentoLateral, Vector3.forward)
                 * Quaternion.AngleAxis(giroSolar, Vector3.up);
             transform.rotation = Quaternion.identity;
             // Apoio pela fotosfera, sem oscilar com a coroa, a rotação ou a piscada.
-            p.y = altura + raioSolarBase * deformacaoSolar.localScale.y - deformacaoSolar.localPosition.y;
+            // Ao deslizar, desce junto com o fundo do poço e continua apoiado no piso curvado.
+            float raioAtual = raioSolarBase * deformacaoSolar.localScale.y;
+            p.y = altura + raioAtual - deformacaoSolar.localPosition.y - afundamento;
         }
         else
         {
-            p.y = altura + alturaVisual / 2f;
+            p.y = altura + alturaVisual / 2f - afundamento;
             transform.rotation = Quaternion.Euler(giro, giroDeslize, rolamentoLateral);
             transform.localScale = new Vector3(larguraVisual, alturaVisual, profundidadeVisual);
         }
@@ -501,6 +518,8 @@ public class PlayerController : MonoBehaviour
     {
         if (morto) return;
         morto = true;
+        // O espaço volta a ficar plano quando o Sol se desfaz.
+        PocoGravitacional.Reiniciar();
         for (int i = 0; i < visuais.Length; i++)
             if (visuais[i] != null) visuais[i].enabled = false;
         if (orbeEscudo != null) orbeEscudo.gameObject.SetActive(false);

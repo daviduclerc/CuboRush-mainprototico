@@ -30,6 +30,19 @@ public class FloorGenerator : MonoBehaviour
     readonly Queue<Transform> pedacos = new Queue<Transform>();
     float proximoZ;
     static readonly Material[] materiaisLinhaNeon = new Material[1];
+    // Malhas subdivididas: o piso e as linhas precisam de vértices para se curvar no poço gravitacional.
+    static Mesh malhaPiso, malhaLinha;
+    static Vector3 tamanhoMalhaPiso;
+    const float PassoDaGradeX = 0.2f;
+    const float PassoDaGradeZ = 0.25f;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ReiniciarCache()
+    {
+        malhaPiso = null;
+        malhaLinha = null;
+        materiaisLinhaNeon[0] = null;
+    }
 
     void Start()
     {
@@ -75,6 +88,7 @@ public class FloorGenerator : MonoBehaviour
 
         // Liga metálica lisa com guias luminosas longitudinais.
         piso.GetComponent<Renderer>().sharedMaterial = Visual.MatPisoLiso(corPiso);
+        piso.GetComponent<MeshFilter>().sharedMesh = MalhaPiso(new Vector3(larguraTotal, 0.2f, comprimentoPedaco));
 
         // Todas as divisas longitudinais usam o mesmo rosa neon.
         Color[] coresNeon = { new Color(1f, 0.06f, 0.55f) };
@@ -84,13 +98,20 @@ public class FloorGenerator : MonoBehaviour
             GameObject linhaNeon = Visual.Forma(PrimitiveType.Cube, "LinhaNeonLongitudinal", raiz,
                 new Vector3(-larguraTotal / 2f + i * larguraFaixa, 0.008f, comprimentoPedaco / 2f),
                 new Vector3(0.060f, 0.012f, comprimentoPedaco), corNeon, true, raio: 0f);
+            linhaNeon.GetComponent<MeshFilter>().sharedMesh = MalhaLinha(Mathf.CeilToInt(comprimentoPedaco / PassoDaGradeZ));
             int indiceCor = i % coresNeon.Length;
             if (materiaisLinhaNeon[indiceCor] == null)
             {
-                Material neon = new Material(Visual.Mat(corNeon, true));
+                // Shader próprio para a linha acompanhar a curvatura do piso.
+                Shader shaderNeon = Resources.Load<Shader>("Space/NeonDaPista");
+                Material neon = shaderNeon != null ? new Material(shaderNeon) : new Material(Visual.Mat(corNeon, true));
                 neon.name = "Neon vibrante da pista " + indiceCor;
-                neon.EnableKeyword("_EMISSION");
-                neon.SetColor("_EmissionColor", corNeon * 3.5f);
+                if (shaderNeon != null) neon.SetColor("_Cor", corNeon * 3.5f);
+                else
+                {
+                    neon.EnableKeyword("_EMISSION");
+                    neon.SetColor("_EmissionColor", corNeon * 3.5f);
+                }
                 materiaisLinhaNeon[indiceCor] = neon;
             }
             linhaNeon.GetComponent<Renderer>().sharedMaterial = materiaisLinhaNeon[indiceCor];
@@ -121,6 +142,84 @@ public class FloorGenerator : MonoBehaviour
             }
         }
         return raiz;
+    }
+
+    // ---------- Malhas subdivididas ----------
+
+    /// <summary>Laje do piso com o topo em grade fina (as bordas laterais ficam presas).</summary>
+    static Mesh MalhaPiso(Vector3 tamanho)
+    {
+        if (malhaPiso != null && tamanhoMalhaPiso == tamanho) return malhaPiso;
+        int colunas = Mathf.Max(1, Mathf.CeilToInt(tamanho.x / PassoDaGradeX));
+        int linhas = Mathf.Max(1, Mathf.CeilToInt(tamanho.z / PassoDaGradeZ));
+        var v = new List<Vector3>();
+        var n = new List<Vector3>();
+        var t = new List<int>();
+        Vector3 h = tamanho * 0.5f;
+        Vector3 x = new Vector3(tamanho.x, 0f, 0f), y = new Vector3(0f, tamanho.y, 0f), z = new Vector3(0f, 0f, tamanho.z);
+        Face(v, n, t, new Vector3(-h.x, h.y, -h.z), x, z, colunas, linhas, Vector3.up);
+        Face(v, n, t, new Vector3(-h.x, -h.y, -h.z), x, z, 1, 1, Vector3.down);
+        Face(v, n, t, new Vector3(-h.x, -h.y, -h.z), z, y, 1, 1, Vector3.left);
+        Face(v, n, t, new Vector3(h.x, -h.y, -h.z), z, y, 1, 1, Vector3.right);
+        Face(v, n, t, new Vector3(-h.x, -h.y, -h.z), x, y, colunas, 1, Vector3.back);
+        Face(v, n, t, new Vector3(-h.x, -h.y, h.z), x, y, colunas, 1, Vector3.forward);
+        malhaPiso = CriarMalha("Piso curvavel do espaco-tempo", v, n, t);
+        tamanhoMalhaPiso = tamanho;
+        return malhaPiso;
+    }
+
+    /// <summary>Cubo de lado 1 dividido ao longo de Z (a escala do objeto dá o tamanho).</summary>
+    static Mesh MalhaLinha(int segmentos)
+    {
+        if (malhaLinha != null) return malhaLinha;
+        var v = new List<Vector3>();
+        var n = new List<Vector3>();
+        var t = new List<int>();
+        Vector3 x = Vector3.right, y = Vector3.up, z = Vector3.forward;
+        Face(v, n, t, new Vector3(-0.5f, 0.5f, -0.5f), x, z, 1, segmentos, Vector3.up);
+        Face(v, n, t, new Vector3(-0.5f, -0.5f, -0.5f), x, z, 1, segmentos, Vector3.down);
+        Face(v, n, t, new Vector3(-0.5f, -0.5f, -0.5f), z, y, segmentos, 1, Vector3.left);
+        Face(v, n, t, new Vector3(0.5f, -0.5f, -0.5f), z, y, segmentos, 1, Vector3.right);
+        Face(v, n, t, new Vector3(-0.5f, -0.5f, -0.5f), x, y, 1, 1, Vector3.back);
+        Face(v, n, t, new Vector3(-0.5f, -0.5f, 0.5f), x, y, 1, 1, Vector3.forward);
+        malhaLinha = CriarMalha("Linha neon curvavel", v, n, t);
+        return malhaLinha;
+    }
+
+    /// <summary>Grade de quadrados de "origem" até origem + eixoU + eixoV, virada para "normal".</summary>
+    static void Face(List<Vector3> v, List<Vector3> n, List<int> t, Vector3 origem,
+        Vector3 eixoU, Vector3 eixoV, int divisoesU, int divisoesV, Vector3 normal)
+    {
+        int inicio = v.Count;
+        for (int j = 0; j <= divisoesV; j++)
+            for (int i = 0; i <= divisoesU; i++)
+            {
+                v.Add(origem + eixoU * (i / (float)divisoesU) + eixoV * (j / (float)divisoesV));
+                n.Add(normal);
+            }
+        bool inverter = Vector3.Dot(Vector3.Cross(eixoV, eixoU), normal) < 0f;
+        for (int j = 0; j < divisoesV; j++)
+            for (int i = 0; i < divisoesU; i++)
+            {
+                int a = inicio + j * (divisoesU + 1) + i, b = a + 1, c = a + divisoesU + 1, d = c + 1;
+                if (!inverter) { t.Add(a); t.Add(c); t.Add(b); t.Add(b); t.Add(c); t.Add(d); }
+                else { t.Add(a); t.Add(b); t.Add(c); t.Add(b); t.Add(d); t.Add(c); }
+            }
+    }
+
+    static Mesh CriarMalha(string nome, List<Vector3> v, List<Vector3> n, List<int> t)
+    {
+        var malha = new Mesh { name = nome };
+        if (v.Count > 65000) malha.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        malha.SetVertices(v);
+        malha.SetNormals(n);
+        malha.SetTriangles(t, 0);
+        malha.RecalculateBounds();
+        // Margem nos limites: o shader afunda o piso abaixo da laje original.
+        Bounds b = malha.bounds;
+        b.Expand(new Vector3(0f, 3f, 0f));
+        malha.bounds = b;
+        return malha;
     }
 }
 

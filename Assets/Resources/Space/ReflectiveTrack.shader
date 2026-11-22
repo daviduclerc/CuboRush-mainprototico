@@ -13,6 +13,7 @@ Shader "CuboRush/ReflectiveTrack"
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "PocoGravitacional.hlsl"
             CBUFFER_START(UnityPerMaterial)
             half4 _BaseColor;
             CBUFFER_END
@@ -23,13 +24,21 @@ Shader "CuboRush/ReflectiveTrack"
             half4 _TrackSunColor;
             float _TrackReflectionStrength;
             struct A { float4 p:POSITION; float3 normal:NORMAL; };
-            struct V { float4 p:SV_POSITION; float3 world:TEXCOORD0; float3 normal:TEXCOORD1; float4 reflexo:TEXCOORD2; };
+            struct V { float4 p:SV_POSITION; float3 world:TEXCOORD0; float3 normal:TEXCOORD1; float4 reflexo:TEXCOORD2; float3 malha:TEXCOORD3; };
             V vert(A i) {
                 V o;
-                o.world=TransformObjectToWorld(i.p.xyz);
+                float3 original=TransformObjectToWorld(i.p.xyz);
+                // O piso afunda em funil em volta do Sol (poço gravitacional).
+                float deslocamento=PocoDeslocamento(original.xz);
+                o.world=original;
+                o.world.y-=deslocamento;
                 o.p=TransformWorldToHClip(o.world);
-                o.normal=TransformObjectToWorldNormal(i.normal);
+                float3 n=TransformObjectToWorldNormal(i.normal);
+                if(n.y>0.5) n=PocoNormal(original.xz);
+                o.normal=n;
                 o.reflexo=mul(_TrackReflectionVP,float4(o.world,1));
+                // Coordenadas antes da curvatura: a grade desenhada com elas se curva junto com o piso.
+                o.malha=float3(original.xz,deslocamento);
                 return o;
             }
             half4 frag(V i):SV_Target {
@@ -55,11 +64,21 @@ Shader "CuboRush/ReflectiveTrack"
                 float borda=smoothstep(0,0.025,uv.x)*smoothstep(0,0.025,uv.y)*(1-smoothstep(0.975,1,uv.x))*(1-smoothstep(0.975,1,uv.y));
                 float topo=smoothstep(0.8,0.98,n.y);
                 float forca=_TrackReflectionStrength*proximidade*topo*borda;
-                return half4(baseColor+reflexo*forca,1);
+                half3 cor=baseColor+reflexo*forca;
+
+                // Malha do espaço-tempo: aparece só onde o piso está curvado.
+                float curvatura=saturate(abs(i.malha.z)*3.0);
+                float2 celula=i.malha.xy/0.5;
+                float2 largura=max(fwidth(celula),0.0001);
+                float2 distLinha=abs(frac(celula-0.5)-0.5)/largura;
+                float linha=1-saturate(min(distLinha.x,distLinha.y)-0.25);
+                half3 corMalha=lerp(_TrackSunColor.rgb,half3(0.55,0.35,1.0),0.5)*2.6;
+                // O fundo do funil escurece, como a garganta de um buraco negro.
+                cor*=1-0.55*saturate(i.malha.z/0.6);
+                cor+=corMalha*linha*curvatura;
+                return half4(cor,1);
             }
             ENDHLSL
         }
     }
 }
-
-

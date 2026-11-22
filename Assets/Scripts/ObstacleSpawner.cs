@@ -416,6 +416,8 @@ public class ObstacleSpawner : MonoBehaviour
         int faces = tipo == Obst.Baixo ? 3 : (tipo == Obst.Barra ? 4 : 6);
         GameObject obj = PolyhedronVisual.Criar("Poliedro" + tipo, transform,
             new Vector3(x, centroY, z), tamanho, faces, cor);
+        // Paredes que não dá para passar agachado se curvam junto com o piso no poço gravitacional.
+        if (tipo != Obst.Barra) obj.AddComponent<DeformacaoPeloPoco>();
         Registrar(obj, TipoItem.Obstaculo, tamanho);
     }
 
@@ -473,7 +475,9 @@ public class ObstacleSpawner : MonoBehaviour
         TrackItem item = Registrar(PolyhedronVisual.Criar("PoliedroMovel", transform,
             new Vector3(Random.Range(-limite, limite), tamanho.y / 2f, z),
             tamanho, 5, corMovel), TipoItem.Obstaculo, tamanho);
-        item.velocidadeX = Mathf.Lerp(3f, 6f, d) * (Random.value < 0.5f ? -1f : 1f);    }
+        item.velocidadeX = Mathf.Lerp(3f, 6f, d) * (Random.value < 0.5f ? -1f : 1f);
+        item.gameObject.AddComponent<DeformacaoPeloPoco>();
+    }
 
     /// <summary>
     /// Barreira luminosa em todas as faixas. Só passa quem estiver da mesma cor.
@@ -495,6 +499,7 @@ public class ObstacleSpawner : MonoBehaviour
                 new Vector3(jogador.PosicaoXDaFaixa(f), tamanho.y / 2f, z), tamanho, cor),
                 TipoItem.Obstaculo, tamanho);
             item.corId = cor;
+            item.gameObject.AddComponent<DeformacaoPeloPoco>();
         }
     }
 

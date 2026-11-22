@@ -11,7 +11,7 @@ public sealed class SolarMotionFlames : MonoBehaviour
     Transform origemRastroPulo;
     Vector3 centroSolarAnterior;
     float emissaoPulo;
-    float proporcaoAbaixadoAnterior = 1f;
+    float afundamentoAnterior;
     float emissaoTraseira;
     float reforcoTraseiro;
     Material material;
@@ -54,7 +54,7 @@ public sealed class SolarMotionFlames : MonoBehaviour
         renderLateral.lengthScale = 1.8f;
         pouso = CriarSistema("ClaraoDoPouso", false, 48);
         labaredaTraseira = CriarSistema("LabaredaTraseiraDeTransformacao", true, 100);
-        proporcaoAbaixadoAnterior = jogador.ProporcaoAbaixado;
+        afundamentoAnterior = jogador.Afundamento;
         origemRastroPulo = new GameObject("ArcoDePlasmaDoPulo").transform;
         origemRastroPulo.position = new Vector3(0f, 0f, transform.position.z);
         rastroPulo = CriarSistema("LabaredaCurvaDoPulo", false, 160);
@@ -147,7 +147,7 @@ public sealed class SolarMotionFlames : MonoBehaviour
             }
             centroSolarAnterior = sol.position;
             emissaoPulo = 0f;
-            proporcaoAbaixadoAnterior = jogador.ProporcaoAbaixado;
+            afundamentoAnterior = jogador.Afundamento;
             emissaoTraseira = reforcoTraseiro = 0f;
             acumuladorLateral = 0f;
             posicaoAnterior = transform.position;
@@ -244,10 +244,10 @@ public sealed class SolarMotionFlames : MonoBehaviour
 
     void AtualizarLabaredaTraseira(Vector3 centro, float raio, float dt)
     {
-        float proporcaoAtual = jogador.ProporcaoAbaixado;
-        float variacao = Mathf.Abs(proporcaoAtual - proporcaoAbaixadoAnterior) / dt;
-        proporcaoAbaixadoAnterior = proporcaoAtual;
-        // Tanto a contração quanto a expansão lançam plasma para trás da corrida.
+        float afundamentoAtual = jogador.Afundamento;
+        float variacao = Mathf.Abs(afundamentoAtual - afundamentoAnterior) / dt;
+        afundamentoAnterior = afundamentoAtual;
+        // Tanto afundar quanto emergir lançam plasma para trás da corrida.
         if (variacao > 0.04f) reforcoTraseiro = 0.18f;
         else reforcoTraseiro = Mathf.Max(0f, reforcoTraseiro - dt);
         if (reforcoTraseiro <= 0f) { emissaoTraseira = 0f; return; }

@@ -128,7 +128,7 @@ public sealed class StabilityWorldEffects : MonoBehaviour
         {
             // Sem filtro de cor, sem tirar saturação: só escurece um pouco o mundo no fim.
             ajustesCor.colorFilter.value = Color.white;
-            ajustesCor.saturation.value = 8f;
+            ajustesCor.saturation.value = 16f;
             ajustesCor.postExposure.value = -0.25f * fasePulso;
         }
         if (vinheta != null)

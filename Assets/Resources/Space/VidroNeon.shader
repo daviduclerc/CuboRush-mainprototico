@@ -34,9 +34,12 @@ Shader "CuboRush/VidroNeon"
             float3 v = normalize(GetCameraPositionWS() - i.mundo);
             float fresnel = pow(1.0 - saturate(dot(n, v)), 3.0);
             float3 reflexo = AmbienteRefletido(i.mundo, reflect(-v, n));
-            float3 cor = _Cor.rgb * (0.25 + fresnel * 1.6) + reflexo * (0.2 + fresnel * 0.8);
+            // Cristal: cada faceta com um tom diferente, núcleo que pulsa e borda bem acesa.
+            float faceta = frac(sin(dot(floor(n * 4.0 + 0.5), float3(12.9898, 78.233, 37.719))) * 43758.5453);
+            float pulso = 1.0 + 0.12 * sin(_Time.y * 1.8 + i.mundo.z * 0.35 + i.mundo.x);
+            float3 cor = _Cor.rgb * (0.45 + faceta * 0.55 + fresnel * 2.4) * pulso + reflexo * (0.15 + fresnel * 0.7);
             float brilhoReflexo = saturate(dot(reflexo, float3(0.3, 0.59, 0.11)));
-            float alfa = saturate(_Opacidade + fresnel * 0.55 + brilhoReflexo * 0.4);
+            float alfa = saturate(_Opacidade + faceta * 0.12 + fresnel * 0.6 + brilhoReflexo * 0.3);
             return half4(cor, alfa);
         }
         ENDHLSL

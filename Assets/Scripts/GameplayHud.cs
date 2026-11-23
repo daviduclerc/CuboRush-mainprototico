@@ -82,6 +82,13 @@ public sealed class GameplayHud : MonoBehaviour
         painel.anchorMin = painel.anchorMax = painel.pivot = new Vector2(1f, 1f);
         Imagem(painel, EstiloUI.SpriteArredondado, EstiloUI.FundoPainel, 1.5f);
 
+        // Aura magenta por fora da moldura, como o contorno duplo do HUD da arte de referência.
+        var rectAura = NovoRect("Aura neon", painel);
+        Esticar(rectAura);
+        rectAura.offsetMin = new Vector2(-4f, -4f);
+        rectAura.offsetMax = new Vector2(4f, 4f);
+        Imagem(rectAura, EstiloUI.SpriteContorno, new Color(EstiloUI.Rosa.r, EstiloUI.Rosa.g, EstiloUI.Rosa.b, 0.4f), 1.5f);
+
         // Moldura neon e um filete de luz no topo, ambos tingidos pela cor do Sol.
         var rectMoldura = NovoRect("Moldura", painel);
         Esticar(rectMoldura);

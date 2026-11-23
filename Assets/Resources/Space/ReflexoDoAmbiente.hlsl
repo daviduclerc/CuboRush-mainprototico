@@ -31,7 +31,9 @@ float3 PistaNaDirecao(float3 origem, float3 r)
     float k = (ponto.x + meia) / faixa;
     float distLinha = abs(k - round(k)) * faixa;
     float linha = (1.0 - smoothstep(0.02, 0.06, distLinha)) * dentro;
-    cor += float3(1.0, 0.06, 0.55) * 2.2 * linha;
+    // Mesmas cores das linhas reais: ciano entre as faixas, violeta nas bordas.
+    float borda = step(abs(ponto.x), meia + 0.1) * step(meia - faixa * 0.5, abs(ponto.x));
+    cor += lerp(float3(0.30, 0.85, 1.0), float3(0.62, 0.32, 1.0), borda) * 2.2 * linha;
     // Ao longe o piso some no escuro, como no reflexo de verdade.
     return cor * exp(-t * 0.04) * dentro;
 }

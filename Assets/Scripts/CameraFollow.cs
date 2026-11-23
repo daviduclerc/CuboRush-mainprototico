@@ -9,10 +9,10 @@ public class CameraFollow : MonoBehaviour
     public Transform alvo;
 
     [Tooltip("Posição da câmera em relação ao cubo.")]
-    public Vector3 deslocamento = new Vector3(0f, 4.5f, -8f);
+    public Vector3 deslocamento = new Vector3(0f, 4.2f, -6f);
 
     [Tooltip("Inclinação da câmera para baixo, em graus.")]
-    public float inclinacao = 5.5f;
+    public float inclinacao = 14f;
 
     [Tooltip("0 = câmera fixa no meio da pista; 1 = acompanha o cubo totalmente de lado.")]
     [Range(0f, 1f)]

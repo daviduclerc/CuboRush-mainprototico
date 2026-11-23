@@ -44,7 +44,8 @@ public sealed class TrackPlanarReflection : MonoBehaviour
 
     void GarantirImagem()
     {
-        int w = Mathf.Clamp(principal.pixelWidth / 2, 320, 1280);
+        // Resolução cheia: reflexos nítidos no vidro do piso.
+        int w = Mathf.Clamp(principal.pixelWidth, 640, 1920);
         int h = Mathf.Max(180, Mathf.RoundToInt(w / principal.aspect));
         if (imagem != null && largura == w && altura == h) return;
         if (imagem != null) { imagem.Release(); Destroy(imagem); }

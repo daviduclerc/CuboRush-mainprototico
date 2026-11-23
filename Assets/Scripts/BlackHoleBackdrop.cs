@@ -11,7 +11,9 @@ public class BlackHoleBackdrop : MonoBehaviour
     public Transform jogador;
     public float distancia = 48f;
     public float altura = 2.2f;
-    public float tamanho = 32f;
+    public float tamanho = 42f;
+    [Tooltip("Quanto o centro do buraco negro fica acima do horizonte, em graus.")]
+    public float elevacao = 5f;
 
     Transform conjunto;
     CameraFollow cameraFollow;
@@ -222,7 +224,7 @@ public class BlackHoleBackdrop : MonoBehaviour
             // Centraliza o buraco negro na câmera e o assenta um pouco acima do ponto de fuga da pista.
             x = alvo.x * cameraFollow.acompanhamentoLateral + cameraFollow.deslocamento.x;
             float distanciaDaCamera = Mathf.Max(1f, distancia - cameraFollow.deslocamento.z);
-            y = cameraFollow.deslocamento.y + Mathf.Tan(0.5f * Mathf.Deg2Rad) * distanciaDaCamera;
+            y = cameraFollow.deslocamento.y + Mathf.Tan(elevacao * Mathf.Deg2Rad) * distanciaDaCamera;
         }
         conjunto.position = new Vector3(x, y, alvo.z + distancia);
     }

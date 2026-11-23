@@ -80,6 +80,11 @@ public static class GameBootstrap
         BlackHoleBackdrop buracoNegro = new GameObject("CenarioEspacial").AddComponent<BlackHoleBackdrop>();
         buracoNegro.jogador = cubo.transform;
 
+        // Asteroides com contraluz do buraco negro e cristais flutuando dos dois lados da pista.
+        CampoDeAsteroides asteroides = new GameObject("CampoDeAsteroides").AddComponent<CampoDeAsteroides>();
+        asteroides.jogador = cubo.transform;
+        asteroides.meiaLarguraPista = QuantidadeFaixas * LarguraFaixa / 2f;
+
         // Atração crescente do buraco negro e ondas gravitacionais.
         FenomenosGravitacionais gravidade = new GameObject("FenomenosGravitacionais")
             .AddComponent<FenomenosGravitacionais>();
@@ -160,9 +165,11 @@ public static class GameBootstrap
         volume.priority = 10f;
         VolumeProfile perfil = ScriptableObject.CreateInstance<VolumeProfile>();
         Bloom bloom = perfil.Add<Bloom>(true);
-        bloom.threshold.value = 0.95f;
-        bloom.intensity.value = 0.85f;
-        bloom.scatter.value = 0.68f;
+        // Bloom mais forte e espalhado, como na arte de referência: o disco do buraco negro,
+        // o Sol e as linhas da pista ganham um halo luminoso.
+        bloom.threshold.value = 0.9f;
+        bloom.intensity.value = 1.35f;
+        bloom.scatter.value = 0.75f;
         bloom.highQualityFiltering.value = true;
 
         // Tonemapping neutro: as luzes fortes saturam com suavidade em vez de estourar,

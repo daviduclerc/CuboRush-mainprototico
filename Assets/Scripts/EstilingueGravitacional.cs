@@ -52,7 +52,7 @@ public sealed class EstilingueGravitacional : MonoBehaviour
                 raio = 2.1f;
                 superficie = new Material(Visual.Mat(new Color(0.55f, 0.75f, 1f), true));
                 if (superficie.HasProperty("_EmissionColor"))
-                    superficie.SetColor("_EmissionColor", new Color(0.55f, 0.75f, 1f) * 3f);
+                    superficie.SetColor("_EmissionColor", new Color(0.55f, 0.75f, 1f) * 1.6f);
                 corHalo = new Color(0.55f, 0.85f, 2f);
                 break;
             default: // planeta rochoso com oceanos
@@ -75,7 +75,9 @@ public sealed class EstilingueGravitacional : MonoBehaviour
         esfera.GetComponent<Renderer>().sharedMaterial = superficie;
         corpo = esfera.transform;
 
-        Material matHalo = Halos.Novo(corHalo, 0.52f, 1f, 2.2f, 0f, 0f);
+        // Halo mais contido: com o bloom forte, o valor cheio virava uma mancha branca que
+        // competia com o buraco negro.
+        Material matHalo = Halos.Novo(corHalo * 0.6f, 0.52f, 1f, 2.2f, 0f, 0f);
         GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         quad.name = "Atmosfera";
         Destroy(quad.GetComponent<Collider>());

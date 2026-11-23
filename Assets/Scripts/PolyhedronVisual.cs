@@ -79,7 +79,8 @@ public static class PolyhedronVisual
         if (vidro == null) return TechObstacleMaterials.Obter(false);
         var material = new Material(vidro) { name = "Vidro neon dos obstaculos" };
         material.SetColor("_Cor", Color.Lerp(cor, Color.white, 0.1f));
-        material.SetFloat("_Opacidade", 0.12f);
+        // Mais encorpado que o vidro original: lê como cristal, como na arte de referência.
+        material.SetFloat("_Opacidade", 0.3f);
         materiaisVidro[cor] = material;
         return material;
     }

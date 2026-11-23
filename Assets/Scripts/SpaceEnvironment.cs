@@ -14,7 +14,8 @@ public class SpaceEnvironment : MonoBehaviour
     readonly List<Transform> galpaoAsteroides = new List<Transform>();
     static readonly Dictionary<string, Texture2D> mapas = new Dictionary<string, Texture2D>();
 
-    // Céu profundo quase preto, com estrelas discretas e sem nebulosa colorida.
+    // Céu profundo com estrelas e nebulosas roxas, azuis e magenta, mais densas
+    // em volta do buraco negro (estilo da arte de referência).
     static Texture2D ceuEmCache;
 
     public static Texture2D CriarCeuRealista()
@@ -68,10 +69,94 @@ public class SpaceEnvironment : MonoBehaviour
             }
         }
 
+        PintarNebulosas(pixels, largura, altura);
+
         tex.SetPixels32(pixels);
         tex.Apply(false, true);
         ceuEmCache = tex;
         return tex;
+    }
+
+    /// <summary>
+    /// Soma nebulosas ao céu panorâmico. O ruído é calculado numa grade menor, pela direção
+    /// 3D de cada pixel (sem emenda e sem esticar nos polos), e ampliado com filtro bilinear.
+    /// </summary>
+    static void PintarNebulosas(Color32[] pixels, int largura, int altura)
+    {
+        const int lb = 768, ab = 384;
+        var nebulosa = new Color[lb * ab];
+        // O buraco negro fica à frente (+Z), logo acima do horizonte.
+        Vector3 frente = new Vector3(0f, 0.08f, 1f).normalized;
+        Color roxa = new Color(0.50f, 0.13f, 0.78f);
+        Color azul = new Color(0.07f, 0.20f, 0.80f);
+        Color magenta = new Color(0.80f, 0.14f, 0.45f);
+        Color laranja = new Color(0.95f, 0.42f, 0.12f);
+
+        for (int y = 0; y < ab; y++)
+        {
+            float latitude = (1f - (y + 0.5f) / ab) * Mathf.PI;
+            float sl = Mathf.Sin(latitude), cl = Mathf.Cos(latitude);
+            for (int x = 0; x < lb; x++)
+            {
+                // Mesmo mapeamento do Skybox/Panoramic: u = 0,5 - longitude / 2π.
+                float longitude = (0.5f - (x + 0.5f) / lb) * 2f * Mathf.PI;
+                Vector3 d = new Vector3(sl * Mathf.Cos(longitude), cl, sl * Mathf.Sin(longitude));
+
+                float n1 = Fbm(d * 2.2f + new Vector3(11f, 3f, 7f));
+                float n2 = Fbm(d * 4.6f + new Vector3(2f, 19f, 5f));
+                float proximo = Mathf.Max(0f, Vector3.Dot(d, frente));
+                float nuvem = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.30f, 0.80f, n1));
+                // Faixas escuras de poeira cortando a nebulosa.
+                nuvem *= Mathf.Lerp(0.35f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.35f, 0.65f, n2)));
+                float forca = 1.3f * nuvem * (0.35f + 0.9f * proximo * proximo);
+                // Abaixo do horizonte a nebulosa some aos poucos (a pista ocupa essa parte).
+                forca *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.55f, 0.05f, d.y));
+
+                Color cor = Color.Lerp(azul, roxa, Mathf.Clamp01(n2 * 1.8f - 0.35f));
+                cor = Color.Lerp(cor, magenta, Mathf.Clamp01((n1 - 0.62f) * 4f) * 0.7f);
+                // Brilho quente do disco escapando em volta do buraco negro.
+                cor = Color.Lerp(cor, laranja, Mathf.Pow(proximo, 24f) * 0.6f);
+                nebulosa[y * lb + x] = cor * forca;
+            }
+        }
+
+        for (int y = 0; y < altura; y++)
+        {
+            float fy = (y + 0.5f) / altura * ab - 0.5f;
+            int y0 = Mathf.Clamp(Mathf.FloorToInt(fy), 0, ab - 1), y1 = Mathf.Min(y0 + 1, ab - 1);
+            float ty = Mathf.Clamp01(fy - y0);
+            for (int x = 0; x < largura; x++)
+            {
+                float fx = (x + 0.5f) / largura * lb - 0.5f;
+                int x0 = Mathf.FloorToInt(fx);
+                float tx = fx - x0;
+                int xa = (x0 % lb + lb) % lb, xb = (xa + 1) % lb;
+                Color c = Color.Lerp(
+                    Color.Lerp(nebulosa[y0 * lb + xa], nebulosa[y0 * lb + xb], tx),
+                    Color.Lerp(nebulosa[y1 * lb + xa], nebulosa[y1 * lb + xb], tx), ty);
+                int i = y * largura + x;
+                Color32 atual = pixels[i];
+                atual.r = (byte)Mathf.Min(255f, atual.r + c.r * 255f);
+                atual.g = (byte)Mathf.Min(255f, atual.g + c.g * 255f);
+                atual.b = (byte)Mathf.Min(255f, atual.b + c.b * 255f);
+                pixels[i] = atual;
+            }
+        }
+    }
+
+    /// <summary>Ruído fractal 3D (soma de ruídos de Perlin nos três planos).</summary>
+    static float Fbm(Vector3 p)
+    {
+        float v = 0f, a = 0.5f;
+        for (int k = 0; k < 4; k++)
+        {
+            v += a * (Mathf.PerlinNoise(p.x, p.y) + Mathf.PerlinNoise(p.y + 31.7f, p.z + 12.3f) +
+                      Mathf.PerlinNoise(p.z + 57.1f, p.x + 91.9f)) / 3f;
+            p = p * 2.03f + new Vector3(1.7f, 9.2f, 4.1f);
+            a *= 0.5f;
+        }
+        // A média de vários Perlin fica concentrada perto de 0,47; espalha para 0..1.
+        return Mathf.Clamp01(0.5f + (v - 0.465f) * 3.5f);
     }
 
     /// <summary>Soma um ponto de luz gaussiano na textura do céu (com volta horizontal).</summary>

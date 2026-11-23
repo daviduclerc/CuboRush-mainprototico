@@ -23,13 +23,28 @@ public class FloorGenerator : MonoBehaviour
     public int quantidadePedacos = 9;
 
     [Header("Visual")]
-    public Color corPiso = new Color(0.105f, 0.115f, 0.14f);
+    // Vidro escuro azul-marinho (os veios roxos vêm do shader ReflectiveTrack).
+    public Color corPiso = new Color(0.03f, 0.035f, 0.085f);
     public Color corLinhas = new Color(0.025f, 0.18f, 0.42f);
     public float larguraLinha = 0.035f;
 
+    [Header("Imagem do piso")]
+    [Tooltip("Imagem usada no vidro do piso. Vazio = procura Resources/Space/PisoImagem; sem imagem, usa o piso procedural.")]
+    public Texture2D imagemPiso;
+    [Tooltip("Largura, em metros, que a imagem cobre. 0 = a largura exata da pista (borda a borda).")]
+    public float metrosPorRepeticao = 0f;
+    [Tooltip("Repete a imagem espelhada no comprimento: esconde a emenda de imagens que não foram feitas para repetir.")]
+    public bool espelharEmendas = false;
+    [Range(0f, 3f)] public float brilhoImagem = 1f;
+    [Tooltip("Velocidade do movimento de líquido dentro do vidro (0 = parado).")]
+    [Range(0f, 0.3f)] public float velocidadeFluxo = 0.04f;
+    [Tooltip("Quanto da imagem participa do fluxo.")]
+    [Range(0f, 1f)] public float forcaFluxo = 0.5f;
+    Material materialPiso;
+
     readonly Queue<Transform> pedacos = new Queue<Transform>();
     float proximoZ;
-    static readonly Material[] materiaisLinhaNeon = new Material[1];
+    static readonly Material[] materiaisLinhaNeon = new Material[2];
     // Malhas subdivididas: o piso e as linhas precisam de vértices para se curvar no poço gravitacional.
     static Mesh malhaPiso, malhaLinha;
     static Vector3 tamanhoMalhaPiso;
@@ -42,6 +57,7 @@ public class FloorGenerator : MonoBehaviour
         malhaPiso = null;
         malhaLinha = null;
         materiaisLinhaNeon[0] = null;
+        materiaisLinhaNeon[1] = null;
     }
 
     void Start()
@@ -52,12 +68,18 @@ public class FloorGenerator : MonoBehaviour
         ReflexoDoAmbiente.DefinirPista(quantidadeFaixas * larguraFaixa / 2f, larguraFaixa);
         proximoZ = zInicial - comprimentoPedaco;
 
+        materialPiso = Visual.MatPisoLiso(corPiso);
+        if (imagemPiso == null) imagemPiso = Resources.Load<Texture2D>("Space/PisoImagem");
+        AplicarImagemDoPiso();
+
         for (int i = 0; i < quantidadePedacos; i++)
             ColocarNaFrente(CriarPedaco());
     }
 
     void Update()
     {
+        // Reaplica todo quadro: dá para ajustar a imagem no Inspector com o jogo rodando.
+        AplicarImagemDoPiso();
         if (jogador == null) return;
 
         // Enquanto o pedaço mais antigo estiver totalmente para trás, manda ele para a frente.
@@ -66,6 +88,27 @@ public class FloorGenerator : MonoBehaviour
         {
             ColocarNaFrente(pedacos.Dequeue());
         }
+    }
+
+    void AplicarImagemDoPiso()
+    {
+        if (materialPiso == null) return;
+        bool temImagem = imagemPiso != null;
+        materialPiso.SetFloat("_UsarTextura", temImagem ? 1f : 0f);
+        if (!temImagem) return;
+        // Na largura a imagem não repete (vai de uma borda à outra); no comprimento, repete.
+        TextureWrapMode modo = espelharEmendas ? TextureWrapMode.Mirror : TextureWrapMode.Repeat;
+        if (imagemPiso.wrapModeU != TextureWrapMode.Clamp) imagemPiso.wrapModeU = TextureWrapMode.Clamp;
+        if (imagemPiso.wrapModeV != modo) imagemPiso.wrapModeV = modo;
+        // Filtro anisotrópico: a imagem continua nítida mesmo vista de lado, lá no fundo da pista.
+        if (imagemPiso.anisoLevel < 16) imagemPiso.anisoLevel = 16;
+        materialPiso.SetTexture("_TexturaPiso", imagemPiso);
+        float larguraPista = quantidadeFaixas * larguraFaixa;
+        materialPiso.SetFloat("_EscalaTextura", metrosPorRepeticao > 0.01f ? metrosPorRepeticao : larguraPista);
+        materialPiso.SetFloat("_AspectoTextura", (float)imagemPiso.height / Mathf.Max(1, imagemPiso.width));
+        materialPiso.SetFloat("_BrilhoTextura", brilhoImagem);
+        materialPiso.SetFloat("_FluxoPiso", velocidadeFluxo);
+        materialPiso.SetFloat("_ForcaFluxo", forcaFluxo);
     }
 
     void ColocarNaFrente(Transform pedaco)
@@ -92,16 +135,16 @@ public class FloorGenerator : MonoBehaviour
         piso.GetComponent<Renderer>().sharedMaterial = Visual.MatPisoLiso(corPiso);
         piso.GetComponent<MeshFilter>().sharedMesh = MalhaPiso(new Vector3(larguraTotal, 0.2f, comprimentoPedaco));
 
-        // Todas as divisas longitudinais usam o mesmo rosa neon.
-        Color[] coresNeon = { new Color(1f, 0.06f, 0.55f) };
+        // Divisas das faixas em ciano; as duas bordas externas da pista em violeta (arte de referência).
+        Color[] coresNeon = { new Color(0.30f, 0.85f, 1f), new Color(0.62f, 0.32f, 1f) };
         for (int i = 0; i <= quantidadeFaixas; i++)
         {
-            Color corNeon = coresNeon[i % coresNeon.Length];
+            int indiceCor = (i == 0 || i == quantidadeFaixas) ? 1 : 0;
+            Color corNeon = coresNeon[indiceCor];
             GameObject linhaNeon = Visual.Forma(PrimitiveType.Cube, "LinhaNeonLongitudinal", raiz,
                 new Vector3(-larguraTotal / 2f + i * larguraFaixa, 0.008f, comprimentoPedaco / 2f),
                 new Vector3(0.060f, 0.012f, comprimentoPedaco), corNeon, true, raio: 0f);
             linhaNeon.GetComponent<MeshFilter>().sharedMesh = MalhaLinha(Mathf.CeilToInt(comprimentoPedaco / PassoDaGradeZ));
-            int indiceCor = i % coresNeon.Length;
             if (materiaisLinhaNeon[indiceCor] == null)
             {
                 // Shader próprio para a linha acompanhar a curvatura do piso.

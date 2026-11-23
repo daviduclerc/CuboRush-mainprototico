@@ -22,7 +22,9 @@ float3 CeuNaDirecao(float3 r)
 // Raio refletido que desce: acerta o piso (y = 0) e mostra metal escuro com as linhas neon.
 float3 PistaNaDirecao(float3 origem, float3 r)
 {
-    float t = origem.y / max(-r.y, 0.0001);
+    // Objetos abaixo do piso (asteroides e cristais baixos) davam t negativo, e exp(-t) virava
+    // infinito: era um dos clarões. A distância fica sempre positiva e limitada.
+    float t = min(max(origem.y, 0.0) / max(-r.y, 0.0001), 400.0);
     float3 ponto = origem + r * t;
     float meia = max(_PistaFaixas.x, 0.01);
     float faixa = max(_PistaFaixas.y, 0.01);

@@ -15,6 +15,23 @@ public class BlackHoleBackdrop : MonoBehaviour
     [Tooltip("Quanto o centro do buraco negro fica acima do horizonte, em graus.")]
     public float elevacao = 5f;
 
+    [Header("Imagem de fundo (substitui o vídeo)")]
+    [Tooltip("Imagem do buraco negro com o céu. Vazio = procura Resources/Space/FundoBuracoNegro; sem imagem, usa o vídeo.")]
+    public Texture2D imagemDeFundo;
+    [Tooltip("Onde fica o centro da sombra na imagem (0–1, a partir do canto inferior esquerdo).")]
+    public Vector2 centroNaImagem = new Vector2(0.5485f, 0.6266f);
+    [Tooltip("Raio da sombra preta na imagem, em fração da altura da imagem.")]
+    public float raioDaSombraNaImagem = 0.1495f;
+    [Tooltip("Tamanho da imagem na tela. Menor = buraco negro mais distante.")]
+    [Range(0.2f, 1.5f)] public float escalaDoFundo = 0.55f;
+    [Range(0.2f, 3f)] public float exposicaoDoFundo = 1f;
+    [Tooltip("Brilho extra do disco. Acima de 0 o bloom transforma as partes quentes em clarões.")]
+    [Range(0f, 3f)] public float realceDoDisco = 0f;
+    [Tooltip("Brilho máximo da imagem. O bloom só acende acima de 0,9.")]
+    [Range(0.3f, 3f)] public float limiteDeBrilho = 0.85f;
+    Material materialFundo;
+    Transform planoFundo;
+
     Transform conjunto;
     CameraFollow cameraFollow;
     VideoPlayer video;
@@ -33,6 +50,13 @@ public class BlackHoleBackdrop : MonoBehaviour
 
         conjunto = new GameObject("BuracoNegro").transform;
         conjunto.SetParent(transform, false);
+
+        if (imagemDeFundo == null) imagemDeFundo = Resources.Load<Texture2D>("Space/FundoBuracoNegro");
+        if (imagemDeFundo != null && MontarImagemDeFundo(cameraPrincipal))
+        {
+            AtualizarPosicao();
+            return;
+        }
 
         // O disco texturizado substitui os anéis lisos que faziam o objeto parecer um planeta.
         GameObject plasma = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -57,6 +81,50 @@ public class BlackHoleBackdrop : MonoBehaviour
         // O centro escuro do horizonte de eventos já faz parte da imagem do plasma.
         ConfigurarVideo(plasma);
         AtualizarPosicao();
+    }
+
+    /// <summary>
+    /// Fundo inteiro com uma imagem: o buraco negro dela fica no mesmo lugar e tamanho do antigo
+    /// e o resto da imagem (nebulosas e estrelas) cobre o céu atrás da pista.
+    /// </summary>
+    bool MontarImagemDeFundo(Camera cameraPrincipal)
+    {
+        Shader shader = Resources.Load<Shader>("Space/FundoEspacial");
+        if (shader == null) return false;
+
+        imagemDeFundo.wrapMode = TextureWrapMode.Clamp;
+        if (imagemDeFundo.anisoLevel < 4) imagemDeFundo.anisoLevel = 4;
+        materialFundo = new Material(shader);
+        materialFundo.mainTexture = imagemDeFundo;
+        materialFundo.SetFloat("_Exposicao", exposicaoDoFundo);
+        materialFundo.SetFloat("_Realce", realceDoDisco);
+        materialFundo.SetFloat("_Limite", limiteDeBrilho);
+
+        GameObject plano = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        plano.name = "ImagemDeFundo";
+        Destroy(plano.GetComponent<Collider>());
+        plano.transform.SetParent(conjunto, false);
+        Renderer r = plano.GetComponent<Renderer>();
+        r.sharedMaterial = materialFundo;
+        r.shadowCastingMode = ShadowCastingMode.Off;
+        r.receiveShadows = false;
+
+        planoFundo = plano.transform;
+        AjustarImagemDeFundo();
+        return true;
+    }
+
+    void AjustarImagemDeFundo()
+    {
+        if (planoFundo == null || imagemDeFundo == null) return;
+        // Raio da sombra na cena: o do antigo buraco negro em vídeo (22% do quadro), vezes a escala.
+        float raioDaSombra = tamanho * 2.25f * 0.22f * escalaDoFundo;
+        float altura = raioDaSombra / Mathf.Max(0.01f, raioDaSombraNaImagem);
+        float largura = altura * imagemDeFundo.width / Mathf.Max(1, imagemDeFundo.height);
+        planoFundo.localScale = new Vector3(largura, altura, 1f);
+        // Desloca a imagem para o centro da sombra cair exatamente na posição do buraco negro.
+        planoFundo.localPosition = new Vector3((0.5f - centroNaImagem.x) * largura,
+            (0.5f - centroNaImagem.y) * altura, 0.8f);
     }
 
     void ConfigurarVideo(GameObject plano)
@@ -127,6 +195,7 @@ public class BlackHoleBackdrop : MonoBehaviour
         if (texturaVideo != null) { texturaVideo.Release(); Destroy(texturaVideo); }
         if (materialVideo != null) Destroy(materialVideo);
         if (materialEspera != null) Destroy(materialEspera);
+        if (materialFundo != null) Destroy(materialFundo);
     }
 
     Texture2D CriarTexturaPlasma()
@@ -203,6 +272,14 @@ public class BlackHoleBackdrop : MonoBehaviour
     void LateUpdate()
     {
         if (jogador != null) AtualizarPosicao();
+        if (materialFundo != null)
+        {
+            // Ajustável no Inspector com o jogo rodando.
+            materialFundo.SetFloat("_Exposicao", exposicaoDoFundo);
+            materialFundo.SetFloat("_Realce", realceDoDisco);
+            materialFundo.SetFloat("_Limite", limiteDeBrilho);
+            AjustarImagemDeFundo();
+        }
         // Movimento quase imperceptível: a imagem representa um disco distante,
         // então não deve girar como um objeto sólido.
         // A câmera e o horizonte ficam fixos; o movimento pertence ao gás do vídeo.

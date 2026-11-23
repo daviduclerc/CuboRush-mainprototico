@@ -777,6 +777,7 @@ public class ObstacleSpawner : MonoBehaviour
     void AplicarCurvatura()
     {
         curvaturaRemovida = false;
+        Vector3 posJogador = jogador != null ? jogador.transform.position : Vector3.zero;
         for (int i = 0; i < itens.Count; i++)
         {
             TrackItem item = itens[i];
@@ -792,12 +793,51 @@ public class ObstacleSpawner : MonoBehaviour
             if (!item.deformavel && item.tipo != TipoItem.Estilingue)
                 queda += CampoGravitacional.OndaPlana(z);
             float inclinacao = CampoGravitacional.Inclinacao(z);
-            if (Mathf.Abs(queda) < 0.0001f && inclinacao < 0.001f) continue;
-            t.position -= Vector3.up * queda;
-            if (inclinacao > 0.001f) t.Rotate(Vector3.right, inclinacao, Space.World);
-            item.quedaAplicada = queda;
-            item.inclinacaoAplicada = inclinacao;
+            if (Mathf.Abs(queda) >= 0.0001f || inclinacao >= 0.001f)
+            {
+                t.position -= Vector3.up * queda;
+                if (inclinacao > 0.001f) t.Rotate(Vector3.right, inclinacao, Space.World);
+                item.quedaAplicada = queda;
+                item.inclinacaoAplicada = inclinacao;
+            }
+            AplicarAtracao(item, t, posJogador);
         }
+    }
+
+    /// <summary>
+    /// Limite de visão gravitacional: longe, o objeto é engolido (não aparece); chegando perto,
+    /// sai esticado, fino e puxado em direção ao buraco negro, e se solta aos poucos.
+    /// Esticar no eixo y local funciona até nas moedas e power-ups, que giram em torno dele.
+    /// </summary>
+    static void AplicarAtracao(TrackItem item, Transform t, Vector3 posJogador)
+    {
+        if (!AtracaoDoBuracoNegro.Ativa) return;
+        AtracaoDoBuracoNegro.Efeito efeito = AtracaoDoBuracoNegro.Calcular(t.position, posJogador);
+        if (efeito.oculto)
+        {
+            OcultarItem(item, true);
+            return;
+        }
+        if (item.ocultoPelaAtracao) OcultarItem(item, false);
+        if (efeito.liberdade >= 0.999f) return;
+
+        item.escalaOriginal = t.localScale;
+        item.escalaAlterada = true;
+        float tamanho = Mathf.Max(efeito.tamanho, 0.01f);
+        t.localScale = Vector3.Scale(item.escalaOriginal,
+            new Vector3(efeito.afinar, efeito.esticar, efeito.afinar) * tamanho);
+        t.position += efeito.deslocamento;
+        item.deslocamentoAtracao = efeito.deslocamento;
+    }
+
+    static void OcultarItem(TrackItem item, bool ocultar)
+    {
+        // Ao reaparecer, busca de novo: pega também partes criadas depois.
+        if (item.renderizadores == null || !ocultar)
+            item.renderizadores = item.GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer r in item.renderizadores)
+            if (r != null) r.forceRenderingOff = ocultar;
+        item.ocultoPelaAtracao = ocultar;
     }
 
     void RestaurarCurvatura()
@@ -807,6 +847,16 @@ public class ObstacleSpawner : MonoBehaviour
         {
             TrackItem item = itens[i];
             if (item == null) continue;
+            if (item.escalaAlterada)
+            {
+                item.transform.localScale = item.escalaOriginal;
+                item.escalaAlterada = false;
+            }
+            if (item.deslocamentoAtracao != Vector3.zero)
+            {
+                item.transform.position -= item.deslocamentoAtracao;
+                item.deslocamentoAtracao = Vector3.zero;
+            }
             if (item.quedaAplicada == 0f && item.inclinacaoAplicada == 0f) continue;
             Transform t = item.transform;
             if (item.inclinacaoAplicada != 0f) t.Rotate(Vector3.right, -item.inclinacaoAplicada, Space.World);

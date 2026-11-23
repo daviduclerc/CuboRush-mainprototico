@@ -56,12 +56,20 @@ Shader "CuboRush/RochaEspacial"
                 float preenchimento = saturate(-n.y * 0.5 + 0.5);
                 float borda = pow(1.0 - saturate(dot(n, v)), 2.5);
 
+                // Longe, a normal facetada (calculada por derivadas) fica instável em objetos de poucos
+                // pixels e o contraluz piscava. Os destaques diminuem com a distância.
+                float distCamera = distance(GetCameraPositionWS(), i.mundo);
+                float perto = 1.0 - smoothstep(45.0, 140.0, distCamera);
+
                 float3 cor = baseCor * (0.22 + difusa * 0.9);
                 cor += baseCor * _CorPreenchimento.rgb * preenchimento * 0.7;
-                cor += _CorContraluz.rgb * borda * saturate(dot(n, l) + 0.45) * 1.4;
+                cor += _CorContraluz.rgb * borda * saturate(dot(n, l) + 0.45) * lerp(0.35, 0.9, perto);
 
                 float lava = EstFbm3(i.objeto * 5.0 + 3.0);
-                cor += _CorLava.rgb * smoothstep(1.0 - _QuantidadeLava * 0.45, 1.0, lava) * 4.0;
+                cor += _CorLava.rgb * smoothstep(1.0 - _QuantidadeLava * 0.45, 1.0, lava) * 2.2;
+                // Teto de brilho: nenhum ponto vira clarão no bloom.
+                float pico = max(cor.r, max(cor.g, cor.b));
+                cor *= min(1.0, 1.25 / max(pico, 0.0001));
                 return half4(cor, 1);
             }
             ENDHLSL

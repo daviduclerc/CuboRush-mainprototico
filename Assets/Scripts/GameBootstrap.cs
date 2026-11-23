@@ -80,6 +80,10 @@ public static class GameBootstrap
         BlackHoleBackdrop buracoNegro = new GameObject("CenarioEspacial").AddComponent<BlackHoleBackdrop>();
         buracoNegro.jogador = cubo.transform;
 
+        // Limite de visão gravitacional: ao longe, os objetos são puxados, esticados e engolidos
+        // pelo buraco negro, e se soltam conforme o jogador se aproxima (ajustável no Inspector).
+        new GameObject("AtracaoDoBuracoNegro").AddComponent<AtracaoDoBuracoNegro>();
+
         // Asteroides com contraluz do buraco negro e cristais flutuando dos dois lados da pista.
         CampoDeAsteroides asteroides = new GameObject("CampoDeAsteroides").AddComponent<CampoDeAsteroides>();
         asteroides.jogador = cubo.transform;
@@ -156,6 +160,9 @@ public static class GameBootstrap
         camera.allowHDR = true;
         UniversalAdditionalCameraData dadosCamera = camera.GetUniversalAdditionalCameraData();
         dadosCamera.renderPostProcessing = true;
+        // Rede de segurança contra flashes: qualquer pixel NaN/infinito vira preto antes do bloom,
+        // em vez de ser espalhado pela tela inteira.
+        dadosCamera.stopNaN = true;
         // Suaviza o serrilhado das linhas finas da pista e das bordas dos obstáculos.
         dadosCamera.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
         dadosCamera.antialiasingQuality = AntialiasingQuality.High;

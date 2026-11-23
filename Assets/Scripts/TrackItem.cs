@@ -61,6 +61,13 @@ public class TrackItem : MonoBehaviour
     [HideInInspector] public float inclinacaoAplicada;
     [HideInInspector] public bool deformavelVerificado;
     [HideInInspector] public bool deformavel;
+
+    // Atração do buraco negro (limite de visão): também é desfeita no começo do próximo quadro.
+    [HideInInspector] public Vector3 deslocamentoAtracao;
+    [HideInInspector] public Vector3 escalaOriginal;
+    [HideInInspector] public bool escalaAlterada;
+    [HideInInspector] public bool ocultoPelaAtracao;
+    [HideInInspector] public Renderer[] renderizadores;
     public Bounds Limites => formaPoliedro != null ? formaPoliedro.Limites : new Bounds(transform.position, tamanho);
     public bool Intersects(Bounds caixa) => formaPoliedro != null ? formaPoliedro.Intersects(caixa) : Limites.Intersects(caixa);
 }

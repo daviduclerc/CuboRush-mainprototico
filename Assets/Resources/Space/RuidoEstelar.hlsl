@@ -77,7 +77,11 @@ float EstFbm2(float2 p)
 // Normal "facetada" (low poly), sempre virada para a câmera.
 float3 EstNormalFacetada(float3 posMundo, float3 paraCamera)
 {
-    float3 n = normalize(cross(ddy(posMundo), ddx(posMundo)));
+    // Em pixels minúsculos (objeto longe ou de lado) as derivadas quase se anulam e
+    // normalize(0) dava NaN: o bloom espalhava esse pixel e a tela inteira piscava.
+    float3 c = cross(ddy(posMundo), ddx(posMundo));
+    float comprimento2 = dot(c, c);
+    float3 n = comprimento2 > 1e-20 ? c * rsqrt(comprimento2) : paraCamera;
     return dot(n, paraCamera) < 0.0 ? -n : n;
 }
 

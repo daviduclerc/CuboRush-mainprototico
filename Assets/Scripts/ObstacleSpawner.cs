@@ -33,6 +33,13 @@ public class ObstacleSpawner : MonoBehaviour
     public float distanciaMaxPowerUp = 320f;
     public float raioIma = 8f;
 
+    [Header("Fenômenos gravitacionais")]
+    [Tooltip("Segundos de jogo até poder aparecer um mini buraco negro.")]
+    public float inicioBuracos = 45f;
+    [Range(0f, 1f)] public float chanceBuraco = 0.2f;
+    [Tooltip("Segundos de jogo até o primeiro estilingue gravitacional.")]
+    public float inicioEstilingue = 20f;
+
     [Header("Paredes de cor")]
     [Tooltip("Chance de uma fileira ser uma parede de cor.")]
     [Range(0f, 1f)] public float chanceParedeDeCor = 0.14f;
@@ -71,6 +78,9 @@ public class ObstacleSpawner : MonoBehaviour
 
     readonly List<TrackItem> itens = new List<TrackItem>();
     float proximoZ;
+    float proximoEstilingueZ;
+    float proximoBuracoZ;
+    bool curvaturaRemovida;
     EstadoJogo estadoAnterior = EstadoJogo.Menu;
     float proximoPowerUpZ;
 
@@ -84,6 +94,8 @@ public class ObstacleSpawner : MonoBehaviour
         proximoInimigo = primeiroInimigo;
         proximoZ = z + inicioLivre;
         proximoPowerUpZ = z + Random.Range(120f, 200f);
+        proximoEstilingueZ = z + Random.Range(220f, 320f);
+        proximoBuracoZ = z;
     }
 
     void Update()
@@ -101,6 +113,8 @@ public class ObstacleSpawner : MonoBehaviour
         // A pausa não gera, remove nem move obstáculos; o primeiro quadro sem
         // deltaTime também aguarda antes de atualizar colisões e projéteis.
         if (jogo.Estado == EstadoJogo.Pausado || (jogo.Estado == EstadoJogo.Jogando && Time.deltaTime <= 0f)) return;
+        // Desfaz a curvatura do quadro anterior: a lógica e as colisões usam a posição real.
+        RestaurarCurvatura();
         float zJogador = jogador.transform.position.z;
 
         while (proximoZ < zJogador + distanciaVisao)
@@ -148,6 +162,17 @@ public class ObstacleSpawner : MonoBehaviour
             if (item.girar) t.Rotate(0f, 180f * Time.deltaTime, 0f, Space.World);
 
             if (!jogando) continue;
+
+            // Estilingue gravitacional: avalia a passagem quando o Sol chega na altura do planeta.
+            if (item.tipo == TipoItem.Estilingue)
+            {
+                if (!item.atravessado && t.position.z <= zJogador)
+                {
+                    item.atravessado = true;
+                    AvaliarEstilingue(item, jogo);
+                }
+                continue;
+            }
 
             // Obstáculo móvel: vai e volta entre as bordas da pista.
             if (item.velocidadeX != 0f)
@@ -202,12 +227,24 @@ public class ObstacleSpawner : MonoBehaviour
                 }
             }
 
-            // Ímã: puxa as moedas próximas.
-            if (item.tipo == TipoItem.Moeda && item.corId == jogador.CorId && jogo.TempoIma > 0f &&
-                Vector3.Distance(t.position, caixaJogador.center) < raioIma)
+            // Ímã gravitacional: as moedas da cor do Sol entram em órbita e espiralam até ele,
+            // como matéria num disco de acreção (mais rápidas quanto mais perto).
+            if (item.tipo == TipoItem.Moeda && item.corId == jogador.CorId && jogo.TempoIma > 0f)
             {
-                t.position = Vector3.MoveTowards(t.position, caixaJogador.center,
-                    (jogo.Velocidade + 18f) * Time.deltaTime);
+                Vector3 centro = caixaJogador.center;
+                Vector3 relativo = t.position - centro;
+                float raio = relativo.magnitude;
+                if (raio < raioIma)
+                {
+                    float dt = Time.deltaTime;
+                    float giro = Mathf.Clamp(9f / Mathf.Max(raio, 0.6f), 1.5f, 12f) * Mathf.Rad2Deg * dt;
+                    relativo = Quaternion.AngleAxis(giro, Vector3.up) * relativo;
+                    float altura = Mathf.Lerp(relativo.y, 0f, 1f - Mathf.Exp(-5f * dt));
+                    Vector3 plano = new Vector3(relativo.x, 0f, relativo.z);
+                    float raioPlano = Mathf.Max(0f, plano.magnitude - Mathf.Max(5f, raio * 2.6f) * dt);
+                    plano = plano.sqrMagnitude > 0.0001f ? plano.normalized * raioPlano : Vector3.zero;
+                    t.position = centro + plano + Vector3.up * altura;
+                }
             }
 
             if (!item.Intersects(caixaJogador)) continue;
@@ -307,7 +344,14 @@ public class ObstacleSpawner : MonoBehaviour
         float vel = jogo.Velocidade;
         float espaco = vel * Mathf.Lerp(tempoReacaoInicial, tempoReacaoFinal, d) * Random.Range(1f, 1.35f);
 
-        if (z > zInicial + 120f && Random.value < chanceParedeDeCor)
+        if (jogo.TempoDeJogo >= inicioBuracos && z >= proximoBuracoZ && Random.value < chanceBuraco)
+        {
+            // Fileira especial: um mini buraco negro sozinho numa faixa.
+            CriarMiniBuraco(z);
+            espaco *= 1.3f;
+            proximoBuracoZ = z + Random.Range(240f, 400f);
+        }
+        else if (z > zInicial + 120f && Random.value < chanceParedeDeCor)
         {
             // Fileira especial: parede de cor ocupando a pista inteira.
             CriarParedeDeCor(z);
@@ -348,6 +392,13 @@ public class ObstacleSpawner : MonoBehaviour
         else if (espaco > 14f && Random.value < 0.3f)
         {
             CriarMoedas(Random.Range(0, Faixas), zMeio, Obst.Nenhum, vel);
+        }
+
+        // Planeta ou estrela ao lado da pista para o estilingue gravitacional.
+        if (jogo.TempoDeJogo >= inicioEstilingue && zMeio >= proximoEstilingueZ)
+        {
+            CriarEstilingue(zMeio);
+            proximoEstilingueZ = zMeio + Random.Range(300f, 480f);
         }
 
         return espaco;
@@ -401,9 +452,10 @@ public class ObstacleSpawner : MonoBehaviour
                 cor = corBaixo;
                 break;
             case Obst.Barra:
-                // Painel suspenso: vão de 0,65 embaixo para passar deslizando.
-                tamanho = new Vector3(largura, 2.2f, 0.6f);
-                centroY = 0.65f + 1.1f;
+                // Quadrado suspenso: vão de 0,65 embaixo para passar deslizando.
+                // A base reta e o vão aberto deixam claro que dá para passar por baixo.
+                tamanho = new Vector3(largura, largura, 0.6f);
+                centroY = 0.65f + largura / 2f;
                 cor = corBarra;
                 break;
             default:
@@ -414,8 +466,13 @@ public class ObstacleSpawner : MonoBehaviour
         }
 
         int faces = tipo == Obst.Baixo ? 3 : (tipo == Obst.Barra ? 4 : 6);
+        // Barra: quadrado (passa por baixo). Alto: base inteira no chão (só desviando).
+        FormaObstaculo forma = tipo == Obst.Barra ? FormaObstaculo.Quadrado
+            : (tipo == Obst.Alto ? FormaObstaculo.HexagonoBaseReta : FormaObstaculo.Regular);
         GameObject obj = PolyhedronVisual.Criar("Poliedro" + tipo, transform,
-            new Vector3(x, centroY, z), tamanho, faces, cor);
+            new Vector3(x, centroY, z), tamanho, faces, cor, forma);
+        // Paredes que não dá para passar agachado se curvam junto com o piso no poço gravitacional.
+        if (tipo != Obst.Barra) obj.AddComponent<DeformacaoPeloPoco>();
         Registrar(obj, TipoItem.Obstaculo, tamanho);
     }
 
@@ -472,11 +529,13 @@ public class ObstacleSpawner : MonoBehaviour
 
         TrackItem item = Registrar(PolyhedronVisual.Criar("PoliedroMovel", transform,
             new Vector3(Random.Range(-limite, limite), tamanho.y / 2f, z),
-            tamanho, 5, corMovel), TipoItem.Obstaculo, tamanho);
-        item.velocidadeX = Mathf.Lerp(3f, 6f, d) * (Random.value < 0.5f ? -1f : 1f);    }
+            tamanho, 5, corMovel, FormaObstaculo.PentagonoBaseReta), TipoItem.Obstaculo, tamanho);
+        item.velocidadeX = Mathf.Lerp(3f, 6f, d) * (Random.value < 0.5f ? -1f : 1f);
+        item.gameObject.AddComponent<DeformacaoPeloPoco>();
+    }
 
     /// <summary>
-    /// Barreira luminosa em todas as faixas. Só passa quem estiver da mesma cor.
+    /// Muro de tijolos em todas as faixas. Só passa quem estiver da mesma cor.
     /// Pode vir de uma cor só (troque a cor do Sol) ou com uma cor por faixa
     /// (troque para a cor primária/inversa certa ou vá para a faixa certa).
     /// </summary>
@@ -485,7 +544,7 @@ public class ObstacleSpawner : MonoBehaviour
         int quantidadeCores = PlayerController.Cores.Length;
         bool corUnica = Random.value < 0.6f;
         int corBase = Random.Range(0, quantidadeCores);
-        Vector3 tamanho = new Vector3(jogador.larguraFaixa, 3.2f, 0.3f);
+        Vector3 tamanho = new Vector3(jogador.larguraFaixa, 3.2f, 0.45f);
 
         for (int f = 0; f < Faixas; f++)
         {
@@ -495,6 +554,7 @@ public class ObstacleSpawner : MonoBehaviour
                 new Vector3(jogador.PosicaoXDaFaixa(f), tamanho.y / 2f, z), tamanho, cor),
                 TipoItem.Obstaculo, tamanho);
             item.corId = cor;
+            item.gameObject.AddComponent<DeformacaoPeloPoco>();
         }
     }
 
@@ -598,7 +658,7 @@ public class ObstacleSpawner : MonoBehaviour
             if (arco)
             {
                 float t = dz / vel;
-                float subida = Mathf.Max(0f, jogador.AlturaMaximaPulo - 0.5f * jogador.gravidade * t * t);
+                float subida = Mathf.Max(0f, jogador.AlturaMaximaPulo - 0.5f * jogador.GravidadeAtual * t * t);
                 y = 0.5f + subida;
             }
             else if (sobre == Obst.Barra) y = 0.3f;  // rente ao chão, por baixo da barra
@@ -667,6 +727,143 @@ public class ObstacleSpawner : MonoBehaviour
         TrackItem item = Registrar(meteoro, TipoItem.Obstaculo, new Vector3(0.82f, 0.82f, 0.82f));
         item.meteoroCaindo = true;
         item.velocidadeQuedaMeteoro = Random.Range(7f, 9f);
+    }
+
+    void CriarMiniBuraco(float z)
+    {
+        int faixa = Random.Range(0, Faixas);
+        GameObject buraco = MiniBuracoNegro.Criar(transform,
+            new Vector3(jogador.PosicaoXDaFaixa(faixa), 0.55f, z), faixa, jogador);
+        // Colisão bem alta: pular ou deslizar não livra quem está na faixa do buraco.
+        Registrar(buraco, TipoItem.Obstaculo, new Vector3(1.05f, 20f, 1.05f));
+    }
+
+    void CriarEstilingue(float z)
+    {
+        int lado = Random.value < 0.5f ? -1 : 1;
+        GameObject corpo = EstilingueGravitacional.Criar(transform, z, lado, jogador);
+        Registrar(corpo, TipoItem.Estilingue, Vector3.zero);
+    }
+
+    /// <summary>
+    /// O Sol passou pelo planeta: na faixa da borda daquele lado ganha o impulso completo;
+    /// uma faixa mais para dentro ganha um impulso menor.
+    /// </summary>
+    void AvaliarEstilingue(TrackItem item, GameManager jogo)
+    {
+        EstilingueGravitacional estilingue = item.GetComponent<EstilingueGravitacional>();
+        if (estilingue == null) return;
+        int distancia = Mathf.Abs(jogador.FaixaAtual - estilingue.FaixaRente);
+        if (distancia > 1) return;
+        bool rente = distancia == 0;
+        int pontos = jogo.Estilingue(rente ? 150 : 60, rente ? 1f : 0.45f);
+        estilingue.Usar();
+        CameraFollow.Tremer(0.25f, rente ? 0.22f : 0.12f);
+        GameplayHud.Avisar(rente ? "ESTILINGUE GRAVITACIONAL!" : "ESTILINGUE", "+" + pontos + " pontos e impulso",
+            estilingue.cor, 1.8f);
+    }
+
+    // ---------- Curvatura do horizonte ----------
+
+    void LateUpdate()
+    {
+        if (curvaturaRemovida) AplicarCurvatura();
+    }
+
+    /// <summary>
+    /// Desce e inclina cada objeto conforme a curvatura da pista no seu z (e, nos objetos
+    /// que não se deformam vértice a vértice, acompanha a onda gravitacional).
+    /// </summary>
+    void AplicarCurvatura()
+    {
+        curvaturaRemovida = false;
+        Vector3 posJogador = jogador != null ? jogador.transform.position : Vector3.zero;
+        for (int i = 0; i < itens.Count; i++)
+        {
+            TrackItem item = itens[i];
+            if (item == null) continue;
+            Transform t = item.transform;
+            if (!item.deformavelVerificado)
+            {
+                item.deformavelVerificado = true;
+                item.deformavel = item.GetComponent<DeformacaoPeloPoco>() != null;
+            }
+            float z = t.position.z;
+            float queda = CampoGravitacional.Queda(z);
+            if (!item.deformavel && item.tipo != TipoItem.Estilingue)
+                queda += CampoGravitacional.OndaPlana(z);
+            float inclinacao = CampoGravitacional.Inclinacao(z);
+            if (Mathf.Abs(queda) >= 0.0001f || inclinacao >= 0.001f)
+            {
+                t.position -= Vector3.up * queda;
+                if (inclinacao > 0.001f) t.Rotate(Vector3.right, inclinacao, Space.World);
+                item.quedaAplicada = queda;
+                item.inclinacaoAplicada = inclinacao;
+            }
+            AplicarAtracao(item, t, posJogador);
+        }
+    }
+
+    /// <summary>
+    /// Limite de visão gravitacional: longe, o objeto é engolido (não aparece); chegando perto,
+    /// sai esticado, fino e puxado em direção ao buraco negro, e se solta aos poucos.
+    /// Esticar no eixo y local funciona até nas moedas e power-ups, que giram em torno dele.
+    /// </summary>
+    static void AplicarAtracao(TrackItem item, Transform t, Vector3 posJogador)
+    {
+        if (!AtracaoDoBuracoNegro.Ativa) return;
+        AtracaoDoBuracoNegro.Efeito efeito = AtracaoDoBuracoNegro.Calcular(t.position, posJogador);
+        if (efeito.oculto)
+        {
+            OcultarItem(item, true);
+            return;
+        }
+        if (item.ocultoPelaAtracao) OcultarItem(item, false);
+        if (efeito.liberdade >= 0.999f) return;
+
+        item.escalaOriginal = t.localScale;
+        item.escalaAlterada = true;
+        float tamanho = Mathf.Max(efeito.tamanho, 0.01f);
+        t.localScale = Vector3.Scale(item.escalaOriginal,
+            new Vector3(efeito.afinar, efeito.esticar, efeito.afinar) * tamanho);
+        t.position += efeito.deslocamento;
+        item.deslocamentoAtracao = efeito.deslocamento;
+    }
+
+    static void OcultarItem(TrackItem item, bool ocultar)
+    {
+        // Ao reaparecer, busca de novo: pega também partes criadas depois.
+        if (item.renderizadores == null || !ocultar)
+            item.renderizadores = item.GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer r in item.renderizadores)
+            if (r != null) r.forceRenderingOff = ocultar;
+        item.ocultoPelaAtracao = ocultar;
+    }
+
+    void RestaurarCurvatura()
+    {
+        curvaturaRemovida = true;
+        for (int i = 0; i < itens.Count; i++)
+        {
+            TrackItem item = itens[i];
+            if (item == null) continue;
+            if (item.escalaAlterada)
+            {
+                item.transform.localScale = item.escalaOriginal;
+                item.escalaAlterada = false;
+            }
+            if (item.deslocamentoAtracao != Vector3.zero)
+            {
+                item.transform.position -= item.deslocamentoAtracao;
+                item.deslocamentoAtracao = Vector3.zero;
+            }
+            if (item.quedaAplicada == 0f && item.inclinacaoAplicada == 0f) continue;
+            Transform t = item.transform;
+            if (item.inclinacaoAplicada != 0f) t.Rotate(Vector3.right, -item.inclinacaoAplicada, Space.World);
+            t.position += Vector3.up * item.quedaAplicada;
+            item.quedaAplicada = 0f;
+            item.inclinacaoAplicada = 0f;
+        }
     }
 
     TrackItem Registrar(GameObject obj, TipoItem tipo, Vector3 tamanho)

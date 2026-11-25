@@ -80,6 +80,20 @@ public static class GameBootstrap
         BlackHoleBackdrop buracoNegro = new GameObject("CenarioEspacial").AddComponent<BlackHoleBackdrop>();
         buracoNegro.jogador = cubo.transform;
 
+        // Limite de visão gravitacional: ao longe, os objetos são puxados, esticados e engolidos
+        // pelo buraco negro, e se soltam conforme o jogador se aproxima (ajustável no Inspector).
+        new GameObject("AtracaoDoBuracoNegro").AddComponent<AtracaoDoBuracoNegro>();
+
+        // Asteroides com contraluz do buraco negro e cristais flutuando dos dois lados da pista.
+        CampoDeAsteroides asteroides = new GameObject("CampoDeAsteroides").AddComponent<CampoDeAsteroides>();
+        asteroides.jogador = cubo.transform;
+        asteroides.meiaLarguraPista = QuantidadeFaixas * LarguraFaixa / 2f;
+
+        // Atração crescente do buraco negro e ondas gravitacionais.
+        FenomenosGravitacionais gravidade = new GameObject("FenomenosGravitacionais")
+            .AddComponent<FenomenosGravitacionais>();
+        gravidade.jogador = jogador;
+
         SpaceLighting luzesDaPista = new GameObject("IluminacaoEspacial").AddComponent<SpaceLighting>();
         luzesDaPista.alvo = cubo.transform;
         luzesDaPista.jogador = jogador;
@@ -144,16 +158,41 @@ public static class GameBootstrap
 
         // Brilho (bloom): é o que faz as partes luminosas parecerem neon.
         camera.allowHDR = true;
-        camera.GetUniversalAdditionalCameraData().renderPostProcessing = true;
+        UniversalAdditionalCameraData dadosCamera = camera.GetUniversalAdditionalCameraData();
+        dadosCamera.renderPostProcessing = true;
+        // Rede de segurança contra flashes: qualquer pixel NaN/infinito vira preto antes do bloom,
+        // em vez de ser espalhado pela tela inteira.
+        dadosCamera.stopNaN = true;
+        // Suaviza o serrilhado das linhas finas da pista e das bordas dos obstáculos.
+        dadosCamera.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
+        dadosCamera.antialiasingQuality = AntialiasingQuality.High;
 
         Volume volume = new GameObject("BrilhoNeon").AddComponent<Volume>();
         volume.isGlobal = true;
         volume.priority = 10f;
         VolumeProfile perfil = ScriptableObject.CreateInstance<VolumeProfile>();
         Bloom bloom = perfil.Add<Bloom>(true);
-        bloom.threshold.value = 1.15f;
-        bloom.intensity.value = 0.55f;
-        bloom.scatter.value = 0.55f;
+        // Bloom mais forte e espalhado, como na arte de referência: o disco do buraco negro,
+        // o Sol e as linhas da pista ganham um halo luminoso.
+        bloom.threshold.value = 0.9f;
+        bloom.intensity.value = 1.35f;
+        bloom.scatter.value = 0.75f;
+        bloom.highQualityFiltering.value = true;
+
+        // Tonemapping neutro: as luzes fortes saturam com suavidade em vez de estourar,
+        // e o neon continua com a mesma cor.
+        Tonemapping tonemapping = perfil.Add<Tonemapping>(true);
+        tonemapping.mode.value = TonemappingMode.Neutral;
+
+        // Grão de filme bem leve: tira a cara de "tela lisa" do vazio escuro.
+        FilmGrain grao = perfil.Add<FilmGrain>(true);
+        grao.type.value = FilmGrainLookup.Thin1;
+        grao.intensity.value = 0.16f;
+        grao.response.value = 0.85f;
         volume.profile = perfil;
+
+        // Poeira estelar que passa riscando pelas laterais e reforça a sensação de velocidade.
+        PoeiraDeVelocidade poeira = camera.GetComponent<PoeiraDeVelocidade>();
+        if (poeira == null) poeira = camera.gameObject.AddComponent<PoeiraDeVelocidade>();
     }
 }

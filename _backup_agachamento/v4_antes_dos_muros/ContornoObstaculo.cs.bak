@@ -1,0 +1,63 @@
+using UnityEngine;
+
+/// <summary>Formas do contorno frontal dos obstáculos (o prisma é esse contorno puxado em Z).</summary>
+public enum FormaObstaculo
+{
+    /// <summary>Polígono regular com uma ponta para cima.</summary>
+    Regular,
+    /// <summary>Quadrado alinhado à pista: barreiras que dá para passar por baixo.</summary>
+    Quadrado,
+    /// <summary>Hexágono com a base inteira reta, rente ao chão: paredes de cor.</summary>
+    HexagonoBaseReta
+}
+
+public static class ContornoObstaculo
+{
+    /// <summary>
+    /// Pontos do contorno no plano XY, em sentido anti-horário, normalizados para
+    /// ocupar exatamente o quadrado de -0,5 a 0,5 (a escala do objeto dá o tamanho).
+    /// </summary>
+    public static Vector3[] Obter(FormaObstaculo forma, int lados)
+    {
+        switch (forma)
+        {
+            case FormaObstaculo.Quadrado:
+                return new[]
+                {
+                    new Vector3(-0.5f, 0.5f, 0f), new Vector3(-0.5f, -0.5f, 0f),
+                    new Vector3(0.5f, -0.5f, 0f), new Vector3(0.5f, 0.5f, 0f)
+                };
+            case FormaObstaculo.HexagonoBaseReta:
+                // Topo chanfrado como um hexágono, mas a base ocupa toda a largura no chão.
+                return new[]
+                {
+                    new Vector3(-0.25f, 0.5f, 0f), new Vector3(-0.5f, 0.15f, 0f),
+                    new Vector3(-0.5f, -0.5f, 0f), new Vector3(0.5f, -0.5f, 0f),
+                    new Vector3(0.5f, 0.15f, 0f), new Vector3(0.25f, 0.5f, 0f)
+                };
+            default:
+                return Regular(lados);
+        }
+    }
+
+    /// <summary>Identifica a malha compartilhada de cada forma.</summary>
+    public static int Chave(FormaObstaculo forma, int lados) => (int)forma * 1000 + lados;
+
+    static Vector3[] Regular(int lados)
+    {
+        var pontos = new Vector3[lados];
+        Vector2 minimo = Vector2.one * float.PositiveInfinity;
+        Vector2 maximo = Vector2.one * float.NegativeInfinity;
+        for (int i = 0; i < lados; i++)
+        {
+            float a = (90f + i * 360f / lados) * Mathf.Deg2Rad;
+            pontos[i] = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
+            minimo = Vector2.Min(minimo, pontos[i]);
+            maximo = Vector2.Max(maximo, pontos[i]);
+        }
+        for (int i = 0; i < lados; i++)
+            pontos[i] = new Vector3((pontos[i].x - minimo.x) / (maximo.x - minimo.x) - 0.5f,
+                (pontos[i].y - minimo.y) / (maximo.y - minimo.y) - 0.5f, 0f);
+        return pontos;
+    }
+}

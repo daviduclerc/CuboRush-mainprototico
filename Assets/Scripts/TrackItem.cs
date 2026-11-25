@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public enum TipoItem { Obstaculo, Moeda, Escudo, Ima, Dobro }
+public enum TipoItem { Obstaculo, Moeda, Escudo, Ima, Dobro, Estilingue }
 
 /// <summary>
 /// Tipos de projétil dos inimigos:
@@ -54,6 +54,20 @@ public class TrackItem : MonoBehaviour
     [HideInInspector] public float velocidadeQuedaMeteoro = 8f;
 
     [HideInInspector] public PolyhedronHitShape formaPoliedro;
+
+    // Curvatura do horizonte: quanto o ObstacleSpawner desceu e inclinou o objeto neste quadro
+    // (é desfeito no começo do próximo quadro, para a lógica sempre ver a posição real).
+    [HideInInspector] public float quedaAplicada;
+    [HideInInspector] public float inclinacaoAplicada;
+    [HideInInspector] public bool deformavelVerificado;
+    [HideInInspector] public bool deformavel;
+
+    // Atração do buraco negro (limite de visão): também é desfeita no começo do próximo quadro.
+    [HideInInspector] public Vector3 deslocamentoAtracao;
+    [HideInInspector] public Vector3 escalaOriginal;
+    [HideInInspector] public bool escalaAlterada;
+    [HideInInspector] public bool ocultoPelaAtracao;
+    [HideInInspector] public Renderer[] renderizadores;
     public Bounds Limites => formaPoliedro != null ? formaPoliedro.Limites : new Bounds(transform.position, tamanho);
     public bool Intersects(Bounds caixa) => formaPoliedro != null ? formaPoliedro.Intersects(caixa) : Limites.Intersects(caixa);
 }

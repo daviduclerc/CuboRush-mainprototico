@@ -14,43 +14,176 @@ public class SpaceEnvironment : MonoBehaviour
     readonly List<Transform> galpaoAsteroides = new List<Transform>();
     static readonly Dictionary<string, Texture2D> mapas = new Dictionary<string, Texture2D>();
 
-    // Céu profundo quase preto, com estrelas discretas e sem nebulosa colorida.
+    // Céu profundo com estrelas e nebulosas roxas, azuis e magenta, mais densas
+    // em volta do buraco negro (estilo da arte de referência).
+    static Texture2D ceuEmCache;
+
     public static Texture2D CriarCeuRealista()
     {
-        const int largura = 1024, altura = 512;
+        // O céu é gerado uma vez e reaproveitado a cada reinício da partida.
+        if (ceuEmCache != null) return ceuEmCache;
+
+        // Resolução alta + filtro bilinear: cada estrela vira um ponto redondo e nítido
+        // em vez dos quadradinhos que apareciam com a textura pequena ampliada.
+        const int largura = 4096, altura = 2048;
         Texture2D tex = new Texture2D(largura, altura, TextureFormat.RGBA32, false);
         tex.name = "CeuEspacialProfundo";
-        tex.wrapMode = TextureWrapMode.Repeat;
-        tex.filterMode = FilterMode.Point;
-        Color[] pixels = new Color[largura * altura];
-        Color vazio = new Color(0.0015f, 0.002f, 0.005f, 1f);
+        tex.wrapModeU = TextureWrapMode.Repeat;
+        tex.wrapModeV = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+        tex.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        Color32[] pixels = new Color32[largura * altura];
+        Color32 vazio = new Color32(0, 1, 2, 255);
         for (int i = 0; i < pixels.Length; i++) pixels[i] = vazio;
 
         // Estrelas pequenas e espaçadas; o contraste vem do buraco negro e da pista.
-        Random.State estado = Random.state;
-        Random.InitState(24681);
-        for (int i = 0; i < 1250; i++)
+        // Cores pela temperatura: azuladas, brancas, amareladas e algumas alaranjadas.
+        Color[] temperaturas =
         {
-            int x = Random.Range(0, largura);
-            int y = Random.Range(0, altura);
-            float brilho = i % 90 == 0 ? Random.Range(0.72f, 1f) : Random.Range(0.20f, 0.52f);
-            Color estrela = i % 8 == 0
-                ? new Color(1f, 0.88f, 0.72f, 1f) * brilho
-                : new Color(0.72f, 0.82f, 1f, 1f) * brilho;
-            pixels[y * largura + x] = estrela;
-            if (i % 90 == 0)
+            new Color(0.70f, 0.80f, 1f), new Color(0.82f, 0.88f, 1f), new Color(1f, 0.97f, 0.92f),
+            new Color(1f, 0.90f, 0.74f), new Color(1f, 0.76f, 0.55f)
+        };
+        System.Random sorteio = new System.Random(24681);
+        float Sorteio(float min, float max) => min + (max - min) * (float)sorteio.NextDouble();
+
+        for (int i = 0; i < 3200; i++)
+        {
+            float x = Sorteio(0f, largura), y = Sorteio(0f, altura);
+            float chance = Sorteio(0f, 1f);
+            Color cor = temperaturas[(int)Mathf.Min(temperaturas.Length - 1, Mathf.Pow(Sorteio(0f, 1f), 1.6f) * temperaturas.Length)];
+            if (i % 3 == 0) cor = temperaturas[1];
+            if (chance < 0.012f)
             {
-                if (x > 0) pixels[y * largura + x - 1] = estrela * 0.35f;
-                if (x + 1 < largura) pixels[y * largura + x + 1] = estrela * 0.35f;
-                if (y > 0) pixels[(y - 1) * largura + x] = estrela * 0.35f;
-                if (y + 1 < altura) pixels[(y + 1) * largura + x] = estrela * 0.35f;
+                // Poucas estrelas brilhantes, com um halo discreto.
+                Pincelar(pixels, largura, altura, x, y, Sorteio(2.6f, 3.6f), cor * 0.10f);
+                Pincelar(pixels, largura, altura, x, y, Sorteio(0.85f, 1.05f), cor * Sorteio(0.85f, 1f));
+            }
+            else if (chance < 0.12f)
+            {
+                Pincelar(pixels, largura, altura, x, y, Sorteio(0.7f, 0.9f), cor * Sorteio(0.45f, 0.75f));
+            }
+            else
+            {
+                float brilho = Mathf.Lerp(0.12f, 0.42f, Sorteio(0f, 1f) * Sorteio(0f, 1f));
+                Pincelar(pixels, largura, altura, x, y, Sorteio(0.5f, 0.68f), cor * brilho);
             }
         }
-        Random.state = estado;
 
-        tex.SetPixels(pixels);
+        PintarNebulosas(pixels, largura, altura);
+
+        tex.SetPixels32(pixels);
         tex.Apply(false, true);
+        ceuEmCache = tex;
         return tex;
+    }
+
+    /// <summary>
+    /// Soma nebulosas ao céu panorâmico. O ruído é calculado numa grade menor, pela direção
+    /// 3D de cada pixel (sem emenda e sem esticar nos polos), e ampliado com filtro bilinear.
+    /// </summary>
+    static void PintarNebulosas(Color32[] pixels, int largura, int altura)
+    {
+        const int lb = 768, ab = 384;
+        var nebulosa = new Color[lb * ab];
+        // O buraco negro fica à frente (+Z), logo acima do horizonte.
+        Vector3 frente = new Vector3(0f, 0.08f, 1f).normalized;
+        Color roxa = new Color(0.50f, 0.13f, 0.78f);
+        Color azul = new Color(0.07f, 0.20f, 0.80f);
+        Color magenta = new Color(0.80f, 0.14f, 0.45f);
+        Color laranja = new Color(0.95f, 0.42f, 0.12f);
+
+        for (int y = 0; y < ab; y++)
+        {
+            float latitude = (1f - (y + 0.5f) / ab) * Mathf.PI;
+            float sl = Mathf.Sin(latitude), cl = Mathf.Cos(latitude);
+            for (int x = 0; x < lb; x++)
+            {
+                // Mesmo mapeamento do Skybox/Panoramic: u = 0,5 - longitude / 2π.
+                float longitude = (0.5f - (x + 0.5f) / lb) * 2f * Mathf.PI;
+                Vector3 d = new Vector3(sl * Mathf.Cos(longitude), cl, sl * Mathf.Sin(longitude));
+
+                float n1 = Fbm(d * 2.2f + new Vector3(11f, 3f, 7f));
+                float n2 = Fbm(d * 4.6f + new Vector3(2f, 19f, 5f));
+                float proximo = Mathf.Max(0f, Vector3.Dot(d, frente));
+                float nuvem = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.30f, 0.80f, n1));
+                // Faixas escuras de poeira cortando a nebulosa.
+                nuvem *= Mathf.Lerp(0.35f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.35f, 0.65f, n2)));
+                float forca = 1.3f * nuvem * (0.35f + 0.9f * proximo * proximo);
+                // Abaixo do horizonte a nebulosa some aos poucos (a pista ocupa essa parte).
+                forca *= Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.55f, 0.05f, d.y));
+
+                Color cor = Color.Lerp(azul, roxa, Mathf.Clamp01(n2 * 1.8f - 0.35f));
+                cor = Color.Lerp(cor, magenta, Mathf.Clamp01((n1 - 0.62f) * 4f) * 0.7f);
+                // Brilho quente do disco escapando em volta do buraco negro.
+                cor = Color.Lerp(cor, laranja, Mathf.Pow(proximo, 24f) * 0.6f);
+                nebulosa[y * lb + x] = cor * forca;
+            }
+        }
+
+        for (int y = 0; y < altura; y++)
+        {
+            float fy = (y + 0.5f) / altura * ab - 0.5f;
+            int y0 = Mathf.Clamp(Mathf.FloorToInt(fy), 0, ab - 1), y1 = Mathf.Min(y0 + 1, ab - 1);
+            float ty = Mathf.Clamp01(fy - y0);
+            for (int x = 0; x < largura; x++)
+            {
+                float fx = (x + 0.5f) / largura * lb - 0.5f;
+                int x0 = Mathf.FloorToInt(fx);
+                float tx = fx - x0;
+                int xa = (x0 % lb + lb) % lb, xb = (xa + 1) % lb;
+                Color c = Color.Lerp(
+                    Color.Lerp(nebulosa[y0 * lb + xa], nebulosa[y0 * lb + xb], tx),
+                    Color.Lerp(nebulosa[y1 * lb + xa], nebulosa[y1 * lb + xb], tx), ty);
+                int i = y * largura + x;
+                Color32 atual = pixels[i];
+                atual.r = (byte)Mathf.Min(255f, atual.r + c.r * 255f);
+                atual.g = (byte)Mathf.Min(255f, atual.g + c.g * 255f);
+                atual.b = (byte)Mathf.Min(255f, atual.b + c.b * 255f);
+                pixels[i] = atual;
+            }
+        }
+    }
+
+    /// <summary>Ruído fractal 3D (soma de ruídos de Perlin nos três planos).</summary>
+    static float Fbm(Vector3 p)
+    {
+        float v = 0f, a = 0.5f;
+        for (int k = 0; k < 4; k++)
+        {
+            v += a * (Mathf.PerlinNoise(p.x, p.y) + Mathf.PerlinNoise(p.y + 31.7f, p.z + 12.3f) +
+                      Mathf.PerlinNoise(p.z + 57.1f, p.x + 91.9f)) / 3f;
+            p = p * 2.03f + new Vector3(1.7f, 9.2f, 4.1f);
+            a *= 0.5f;
+        }
+        // A média de vários Perlin fica concentrada perto de 0,47; espalha para 0..1.
+        return Mathf.Clamp01(0.5f + (v - 0.465f) * 3.5f);
+    }
+
+    /// <summary>Soma um ponto de luz gaussiano na textura do céu (com volta horizontal).</summary>
+    static void Pincelar(Color32[] pixels, int largura, int altura, float cx, float cy, float sigma, Color cor)
+    {
+        int raio = Mathf.CeilToInt(sigma * 3f);
+        float inverso = 1f / (2f * sigma * sigma);
+        int x0 = Mathf.FloorToInt(cx), y0 = Mathf.FloorToInt(cy);
+        for (int dy = -raio; dy <= raio; dy++)
+        {
+            int y = y0 + dy;
+            if (y < 0 || y >= altura) continue;
+            float ddy = y + 0.5f - cy;
+            for (int dx = -raio; dx <= raio; dx++)
+            {
+                float ddx = x0 + dx + 0.5f - cx;
+                float k = Mathf.Exp(-(ddx * ddx + ddy * ddy) * inverso);
+                if (k < 0.01f) continue;
+                int x = ((x0 + dx) % largura + largura) % largura;
+                int indice = y * largura + x;
+                Color32 atual = pixels[indice];
+                atual.r = (byte)Mathf.Min(255f, atual.r + cor.r * k * 255f);
+                atual.g = (byte)Mathf.Min(255f, atual.g + cor.g * k * 255f);
+                atual.b = (byte)Mathf.Min(255f, atual.b + cor.b * k * 255f);
+                pixels[indice] = atual;
+            }
+        }
     }
 
     void Update()

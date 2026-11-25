@@ -1,0 +1,193 @@
+using UnityEngine;
+using UnityEngine.Rendering;
+
+/// <summary>
+/// Muro de cor: parede sólida de tijolos que ocupa a faixa inteira, com a base rente ao chão.
+/// Só passa o Sol da mesma cor: quando ele chega perto com a cor certa, o muro afunda no
+/// piso e abre a passagem; com a cor errada ele continua de pé e pisca ao ser atravessado.
+/// </summary>
+public sealed class ColorPortalVisual : MonoBehaviour
+{
+    const float VelocidadeAbertura = 8f;     // 1 / segundos para abrir ou fechar
+    const float AntecedenciaAbertura = 0.3f; // segundos antes do contato em que começa a abrir
+
+    static readonly Material[] tijolos = new Material[4];
+    static readonly Material[] neons = new Material[4];
+    static Texture2D texturaTijolos, texturaBrilhoTijolos;
+    static PlayerController jogadorEmCache;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ReiniciarCache()
+    {
+        for (int i = 0; i < tijolos.Length; i++) tijolos[i] = neons[i] = null;
+        texturaTijolos = texturaBrilhoTijolos = null;
+        jogadorEmCache = null;
+    }
+
+    Transform muro;
+    Renderer corpo;
+    MaterialPropertyBlock propriedades;
+    Color cor;
+    int corId;
+    float pulso, falha, abertura;
+    bool atravessadoComCorCerta;
+
+    public static GameObject Criar(Transform pai, Vector3 posicao, Vector3 tamanho, int corId)
+    {
+        var objeto = new GameObject("MuroDeCor" + corId);
+        objeto.transform.SetParent(pai, false);
+        objeto.transform.localPosition = posicao;
+        objeto.transform.localScale = tamanho;
+        Color cor = PlayerController.Cores[corId];
+        GarantirMateriais(corId, cor);
+
+        // Tudo que se vê fica num pivô filho, que afunda no chão ao abrir.
+        Transform pivo = new GameObject("Muro").transform;
+        pivo.SetParent(objeto.transform, false);
+
+        var corpoObjeto = new GameObject("TijolosDoMuro");
+        corpoObjeto.transform.SetParent(pivo, false);
+        corpoObjeto.AddComponent<MeshFilter>().sharedMesh = PolyhedronVisual.MalhaPrisma(FormaObstaculo.Quadrado, 4);
+        var render = corpoObjeto.AddComponent<MeshRenderer>();
+        render.sharedMaterial = tijolos[corId];
+
+        // Faixas luminosas no topo e nas laterais: cada faixa do muro se destaca da vizinha.
+        Vector3 espessuraTopo = new Vector3(1.0f, 0.07f / tamanho.y, 1.12f);
+        Vector3 espessuraLado = new Vector3(0.05f / tamanho.x, 1.0f, 1.12f);
+        Emissor(pivo, "CristaDoMuro", new Vector3(0f, 0.5f, 0f), espessuraTopo, corId);
+        Emissor(pivo, "ArestaEsquerdaDoMuro", new Vector3(-0.5f, 0f, 0f), espessuraLado, corId);
+        Emissor(pivo, "ArestaDireitaDoMuro", new Vector3(0.5f, 0f, 0f), espessuraLado, corId);
+
+        var efeito = objeto.AddComponent<ColorPortalVisual>();
+        efeito.muro = pivo;
+        efeito.corpo = render;
+        efeito.cor = cor;
+        efeito.corId = corId;
+        efeito.propriedades = new MaterialPropertyBlock();
+        objeto.AddComponent<PolyhedronHitShape>().Inicializar(4, FormaObstaculo.Quadrado);
+        return objeto;
+    }
+
+    static void Emissor(Transform pai, string nome, Vector3 posicao, Vector3 escala, int corId)
+    {
+        GameObject faixa = Visual.Forma(PrimitiveType.Cube, nome, pai, posicao, escala, Color.white, true, raio: 0f);
+        Renderer r = faixa.GetComponent<Renderer>();
+        r.sharedMaterial = neons[corId];
+        r.shadowCastingMode = ShadowCastingMode.Off;
+    }
+
+    public void Atravessar(bool corCorreta)
+    {
+        pulso = 1f;
+        falha = corCorreta ? 0f : 1f;
+        if (corCorreta) atravessadoComCorCerta = true;
+    }
+
+    void Update()
+    {
+        // Abre quando o Sol da mesma cor está para chegar; fecha se ele trocar de cor antes.
+        PlayerController jogador = Jogador();
+        GameManager jogo = GameManager.Instancia;
+        bool abrir = atravessadoComCorCerta;
+        if (!abrir && jogador != null && jogador.CorId == corId)
+        {
+            float velocidade = jogo != null ? jogo.Velocidade : 10f;
+            float distancia = transform.position.z - jogador.transform.position.z;
+            abrir = distancia > -1f && distancia < Mathf.Max(2.5f, velocidade * AntecedenciaAbertura);
+        }
+        float dt = Time.deltaTime;
+        abertura = Mathf.MoveTowards(abertura, abrir ? 1f : 0f, VelocidadeAbertura * dt);
+        float descida = Mathf.SmoothStep(0f, 1f, abertura);
+        // Afunda um pouco além da própria altura para sumir inteiro dentro do piso.
+        muro.localPosition = new Vector3(0f, -1.05f * descida, 0f);
+
+        pulso = Mathf.MoveTowards(pulso, 0f, dt * 3f);
+        // Cor errada: o muro pisca em branco quente ao ser atravessado.
+        Color brilho = Color.Lerp(cor * 1.4f, new Color(1f, 0.9f, 0.85f) * 4f, pulso * falha);
+        propriedades.SetColor("_EmissionColor", brilho * (1f + pulso * 0.8f));
+        corpo.SetPropertyBlock(propriedades);
+    }
+
+    static PlayerController Jogador()
+    {
+        if (jogadorEmCache == null) jogadorEmCache = Object.FindAnyObjectByType<PlayerController>();
+        return jogadorEmCache;
+    }
+
+    // ---------- Materiais ----------
+
+    static void GarantirMateriais(int corId, Color cor)
+    {
+        if (tijolos[corId] != null && neons[corId] != null) return;
+        if (texturaTijolos == null) CriarTexturasTijolos();
+
+        Shader lit = Shader.Find("Universal Render Pipeline/Lit");
+        if (lit == null) lit = Shader.Find("Standard");
+        var material = new Material(lit) { name = "Muro de tijolos " + corId };
+        material.color = Color.Lerp(cor, Color.white, 0.12f) * 0.75f;
+        material.mainTexture = texturaTijolos;
+        if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", texturaTijolos);
+        // Um ladrilho da textura = 1 x 1 unidade de mundo (muro de 2 x 3,2 → 2 x 3,2 repetições).
+        material.mainTextureScale = new Vector2(2f, 3.2f);
+        if (material.HasProperty("_BaseMap")) material.SetTextureScale("_BaseMap", new Vector2(2f, 3.2f));
+        if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.15f);
+        if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.35f);
+        material.EnableKeyword("_EMISSION");
+        material.SetTexture("_EmissionMap", texturaBrilhoTijolos);
+        material.SetTextureScale("_EmissionMap", new Vector2(2f, 3.2f));
+        material.SetColor("_EmissionColor", cor * 1.4f);
+        tijolos[corId] = material;
+
+        Shader unlit = Shader.Find("Universal Render Pipeline/Unlit");
+        var neon = new Material(unlit != null ? unlit : lit) { name = "Crista luminosa do muro " + corId };
+        neon.color = cor * 3f;
+        if (neon.HasProperty("_BaseColor")) neon.SetColor("_BaseColor", cor * 3f);
+        neons[corId] = neon;
+    }
+
+    /// <summary>Tijolos claros com argamassa escura; os tijolos brilham na cor do muro.</summary>
+    static void CriarTexturasTijolos()
+    {
+        const int lado = 256;
+        const int fileiras = 4;          // 4 fileiras por unidade de altura
+        const int tijolosPorFileira = 2; // 2 tijolos por unidade de largura
+        var albedo = new Color[lado * lado];
+        var brilho = new Color[lado * lado];
+        for (int y = 0; y < lado; y++)
+        for (int x = 0; x < lado; x++)
+        {
+            float v = (y + 0.5f) / lado * fileiras;
+            int fileira = Mathf.FloorToInt(v);
+            float u = (x + 0.5f) / lado * tijolosPorFileira + (fileira % 2 == 1 ? 0.5f : 0f);
+            float fu = u - Mathf.Floor(u), fv = v - fileira;
+            // Distância até a junta mais próxima, em unidades de mundo.
+            float juntaX = Mathf.Min(fu, 1f - fu) / tijolosPorFileira;
+            float juntaY = Mathf.Min(fv, 1f - fv) / fileiras;
+            float junta = Mathf.Min(juntaX, juntaY);
+            float argamassa = 1f - Mathf.SmoothStep(0.006f, 0.014f, junta);
+            int semente = fileira * 7 + Mathf.FloorToInt(u) * 13;
+            float variacao = 0.86f + 0.14f * Mathf.PerlinNoise(semente * 0.37f, 0.5f);
+            float ruido = 0.94f + 0.06f * Mathf.PerlinNoise(x * 0.21f, y * 0.21f);
+            float tijolo = variacao * ruido;
+            float chanfro = Mathf.SmoothStep(0.014f, 0.03f, junta);
+            float claro = Mathf.Lerp(0.08f, tijolo * Mathf.Lerp(0.8f, 1f, chanfro), 1f - argamassa);
+            int p = y * lado + x;
+            albedo[p] = new Color(claro, claro, claro, 1f);
+            float b = (1f - argamassa) * Mathf.Lerp(0.55f, 0.32f, chanfro) * variacao;
+            brilho[p] = new Color(b, b, b, 1f);
+        }
+        texturaTijolos = Textura(albedo, lado, "Tijolos do muro de cor");
+        texturaBrilhoTijolos = Textura(brilho, lado, "Brilho dos tijolos do muro de cor");
+    }
+
+    static Texture2D Textura(Color[] pixels, int lado, string nome)
+    {
+        var textura = new Texture2D(lado, lado, TextureFormat.RGBA32, true) { name = nome };
+        textura.wrapMode = TextureWrapMode.Repeat;
+        textura.filterMode = FilterMode.Trilinear;
+        textura.anisoLevel = 4;
+        textura.SetPixels(pixels);
+        textura.Apply(true, true);
+        return textura;
+    }
+}

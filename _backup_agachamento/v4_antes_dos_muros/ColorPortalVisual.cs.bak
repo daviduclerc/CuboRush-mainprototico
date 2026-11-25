@@ -1,0 +1,108 @@
+using UnityEngine;
+using UnityEngine.Rendering;
+
+/// <summary>Portal de cor com aro hexagonal e campo de energia transparente.</summary>
+public sealed class ColorPortalVisual : MonoBehaviour
+{
+    static Mesh campoHexagonal;
+    static readonly Material[] campos = new Material[4];
+    static readonly Material[] neons = new Material[4];
+    Renderer campo;
+    LineRenderer aro;
+    MaterialPropertyBlock propriedades;
+    Color cor;
+    float pulso;
+    float falha;
+
+    public static GameObject Criar(Transform pai, Vector3 posicao, Vector3 tamanho, int corId)
+    {
+        var objeto = new GameObject("PortalHexagonal" + corId);
+        objeto.transform.SetParent(pai, false);
+        objeto.transform.localPosition = posicao;
+        objeto.transform.localScale = tamanho;
+        // Base inteira reta, rente ao chão: fica claro que não dá para passar por baixo.
+        Vector3[] pontos = ContornoObstaculo.Obter(FormaObstaculo.HexagonoBaseReta, 6);
+        if (campoHexagonal == null)
+        {
+            var vertices = new Vector3[7];
+            var uv = new Vector2[7];
+            var triangles = new int[18];
+            uv[0] = new Vector2(0.5f, 0.5f);
+            for (int i = 0; i < 6; i++)
+            {
+                vertices[i + 1] = pontos[i];
+                uv[i + 1] = new Vector2(pontos[i].x + 0.5f, pontos[i].y + 0.5f);
+                triangles[i * 3] = 0;
+                triangles[i * 3 + 1] = (i + 1) % 6 + 1;
+                triangles[i * 3 + 2] = i + 1;
+            }
+            campoHexagonal = new Mesh { name = "Campo de energia hexagonal" };
+            campoHexagonal.vertices = vertices;
+            campoHexagonal.uv = uv;
+            campoHexagonal.triangles = triangles;
+            campoHexagonal.RecalculateNormals();
+            campoHexagonal.RecalculateBounds();
+            campoHexagonal.bounds = new Bounds(Vector3.zero, Vector3.one);
+        }
+        Color cor = PlayerController.Cores[corId];
+        if (campos[corId] == null)
+        {
+            campos[corId] = new Material(Resources.Load<Shader>("Gameplay/ColorPortal"));
+            campos[corId].SetColor("_Tint", cor);
+            neons[corId] = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            neons[corId].color = cor * 3f;
+        }
+        objeto.AddComponent<MeshFilter>().sharedMesh = campoHexagonal;
+        Renderer renderer = objeto.AddComponent<MeshRenderer>();
+        renderer.sharedMaterial = campos[corId];
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+
+        Material metal = Visual.MatMetal(new Color(0.21f, 0.26f, 0.32f), 0.6f);
+        for (int i = 0; i < 6; i++)
+        {
+            Vector3 a = pontos[i], b = pontos[(i + 1) % 6];
+            GameObject barra = Visual.Forma(PrimitiveType.Cube, "SegmentoDoAro", objeto.transform,
+                (a + b) * 0.5f, new Vector3(0.048f, Vector3.Distance(a, b), 0.55f), Color.gray, raio: 0f);
+            barra.transform.localRotation = Quaternion.FromToRotation(Vector3.up, b - a);
+            barra.GetComponent<Renderer>().sharedMaterial = metal;
+            GameObject emissor = Visual.Forma(PrimitiveType.Cube, "EmissorDoPortal", objeto.transform,
+                a, new Vector3(0.07f, 0.06f, 0.7f), cor, true, raio: 0f);
+            emissor.GetComponent<Renderer>().sharedMaterial = neons[corId];
+        }
+        var luz = new GameObject("AroDeEnergia").AddComponent<LineRenderer>();
+        luz.transform.SetParent(objeto.transform, false);
+        luz.useWorldSpace = false;
+        luz.loop = true;
+        luz.positionCount = 6;
+        luz.widthMultiplier = 0.024f;
+        luz.sharedMaterial = neons[corId];
+        luz.shadowCastingMode = ShadowCastingMode.Off;
+        for (int i = 0; i < 6; i++) luz.SetPosition(i, pontos[i] * 0.94f + Vector3.back * 0.30f);
+        var efeito = objeto.AddComponent<ColorPortalVisual>();
+        efeito.campo = renderer;
+        efeito.aro = luz;
+        efeito.cor = cor;
+        efeito.propriedades = new MaterialPropertyBlock();
+        objeto.AddComponent<PolyhedronHitShape>().Inicializar(6, FormaObstaculo.HexagonoBaseReta);
+        return objeto;
+    }
+
+    public void Atravessar(bool corCorreta)
+    {
+        pulso = 1f;
+        falha = corCorreta ? 0f : 1f;
+    }
+
+    void Update()
+    {
+        pulso = Mathf.MoveTowards(pulso, 0f, Time.deltaTime * 3f);
+        propriedades.SetFloat("_Pulse", pulso);
+        propriedades.SetFloat("_Failure", falha);
+        campo.SetPropertyBlock(propriedades);
+        propriedades.Clear();
+        propriedades.SetColor("_BaseColor", cor * (3f + pulso * 2f));
+        aro.SetPropertyBlock(propriedades);
+        propriedades.Clear();
+    }
+}

@@ -57,17 +57,27 @@ public class GameManager : MonoBehaviour
     bool novoRecorde;
     float momentoFim;
     float tempoImpulsoTermico;
+    // Impulso suavizado: a velocidade sobe e desce aos poucos em vez de saltar.
+    float impulsoSuave, velocidadeImpulso;
+    const float SuavidadeImpulso = 0.22f;
+    // Estilingue gravitacional: impulso de velocidade ao passar rente a um planeta.
+    float tempoEstilingue, forcaEstilingue, estilingueSuave, velocidadeEstilingue;
+
+    /// <summary>0..1: quanto do impulso do estilingue está atuando agora.</summary>
+    public float ImpulsoEstilingue => estilingueSuave;
 
     AudioSource audioFonte;
-    AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro;
+    AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro, somGravidade, somEstilingue;
     GUIStyle estilo;
 
     void Awake()
     {
         Instancia = this;
         if (GetComponent<GameplayHud>() == null) gameObject.AddComponent<GameplayHud>();
+        if (GetComponent<VinhetaDeVida>() == null) gameObject.AddComponent<VinhetaDeVida>();
         Time.timeScale = 1f;
         Velocidade = velocidadeInicial;
+        impulsoSuave = velocidadeImpulso = 0f;
         Estabilidade = 100f;
         Recorde = PlayerPrefs.GetInt("Recorde", 0);
         MoedasTotal = PlayerPrefs.GetInt("MoedasTotal", 0);
@@ -88,6 +98,8 @@ public class GameManager : MonoBehaviour
         somEscudo = CriarTom("Escudo", 500f, 150f, 0.22f);
         somCor = CriarTom("Cor", 700f, 760f, 0.06f);
         somTiro = CriarTom("Tiro", 1200f, 250f, 0.2f);
+        somGravidade = CriarTom("Gravidade", 140f, 55f, 0.6f);
+        somEstilingue = CriarTom("Estilingue", 320f, 1500f, 0.45f);
     }
 
     void Update()
@@ -106,7 +118,14 @@ public class GameManager : MonoBehaviour
                     + aceleracaoFinal * TempoDeJogo * TempoDeJogo;
                 tempoImpulsoTermico = Mathf.Max(0f, tempoImpulsoTermico - Time.deltaTime);
                 float pulso = Mathf.Clamp01(tempoImpulsoTermico / 0.55f);
-                float multiplicadorPulso = 1f + 0.22f * pulso;
+                // O pulso térmico é o alvo; a velocidade chega nele com aceleração e
+                // desaceleração suaves, sem tranco nem queda brusca entre pulsos seguidos.
+                impulsoSuave = Mathf.SmoothDamp(impulsoSuave, pulso, ref velocidadeImpulso,
+                    SuavidadeImpulso, Mathf.Infinity, Time.deltaTime);
+                tempoEstilingue = Mathf.Max(0f, tempoEstilingue - Time.deltaTime);
+                estilingueSuave = Mathf.SmoothDamp(estilingueSuave, tempoEstilingue > 0f ? forcaEstilingue : 0f,
+                    ref velocidadeEstilingue, 0.25f, Mathf.Infinity, Time.deltaTime);
+                float multiplicadorPulso = 1f + 0.22f * impulsoSuave + 0.30f * estilingueSuave;
                 Velocidade = Mathf.Min(velocidadeMaxima * multiplicadorPulso, velocidadeBase * multiplicadorPulso);
                 Pontos += Velocidade * Time.deltaTime * Multiplicador;
                 if (TempoIma > 0f) TempoIma -= Time.deltaTime;
@@ -212,6 +231,30 @@ public class GameManager : MonoBehaviour
     public void SomDeTiro() => Tocar(somTiro, 0.6f);
     public void PulsoTermico() { tempoImpulsoTermico = 0.55f; }
 
+    /// <summary>Estilingue gravitacional: impulso de velocidade (forca 0..1) e pontos. Devolve os pontos ganhos.</summary>
+    public int Estilingue(int pontosBase, float forca)
+    {
+        if (Estado != EstadoJogo.Jogando) return 0;
+        int ganho = pontosBase * Multiplicador;
+        Pontos += ganho;
+        forcaEstilingue = Mathf.Clamp01(Mathf.Max(forca, tempoEstilingue > 0f ? forcaEstilingue : 0f));
+        tempoEstilingue = 1.4f + 0.6f * forca;
+        Tocar(somEstilingue, 0.6f);
+        return ganho;
+    }
+
+    /// <summary>Pontos por escapar de um fenômeno gravitacional (ex.: surfar a onda). Devolve o ganho.</summary>
+    public int BonusGravitacional(int pontosBase)
+    {
+        if (Estado != EstadoJogo.Jogando) return 0;
+        int ganho = pontosBase * Multiplicador;
+        Pontos += ganho;
+        Tocar(somPowerUp, 0.4f);
+        return ganho;
+    }
+
+    public void SomGravitacional() => Tocar(somGravidade, 0.7f);
+
     /// <summary>Atravessou uma parede com a cor certa.</summary>
     public void BonusDeCor()
     {
@@ -265,62 +308,212 @@ public class GameManager : MonoBehaviour
 
     // ---------- Interface ----------
 
+    GUIStyle estiloCartao, estiloTecla, estiloContorno;
+
     void OnGUI()
     {
         if (estilo == null)
         {
             estilo = new GUIStyle(GUI.skin.label);
-            estilo.fontStyle = FontStyle.Bold;
+            estilo.font = EstiloUI.Fonte;
             estilo.wordWrap = false;
+            estilo.clipping = TextClipping.Overflow;
+
+            estiloCartao = new GUIStyle();
+            estiloCartao.normal.background = EstiloUI.TexturaArredondada;
+            estiloCartao.border = new RectOffset(20, 20, 20, 20);
+
+            estiloTecla = new GUIStyle(estiloCartao);
+
+            estiloContorno = new GUIStyle();
+            estiloContorno.normal.background = EstiloUI.TexturaContorno;
+            estiloContorno.border = new RectOffset(20, 20, 20, 20);
         }
+        if (Estado == EstadoJogo.Jogando) return;
 
         float w = Screen.width, h = Screen.height;
-        // A escala respeita altura e largura para o HUD não ultrapassar a tela.
-        Rect areaSegura = Screen.safeArea;
-        float s = Mathf.Clamp(Mathf.Min(areaSegura.height / 720f, areaSegura.width / 1280f), 0.45f, 1.2f);
-        float m = 14f * s;
-        Color ciano = new Color(0.3f, 0.95f, 1f);
-        Color ouro = new Color(1f, 0.85f, 0.2f);
+        // A escala respeita altura e largura para nada ultrapassar a tela.
+        Rect segura = Screen.safeArea;
+        float s = Mathf.Clamp(Mathf.Min(segura.height / 720f, segura.width / 1280f), 0.45f, 1.6f);
+        float pisca = 0.55f + 0.45f * Mathf.Sin(Time.unscaledTime * 3.2f);
+        float cx = segura.center.x;
+        // OnGUI conta Y de cima para baixo; safeArea conta de baixo para cima.
+        float topo = h - segura.yMax;
 
-        Rect centro = new Rect(0, 0, w, h);
+        Color laranjaSolar = new Color(1f, 0.62f, 0.22f);
+
         switch (Estado)
         {
             case EstadoJogo.Menu:
-                Texto(new Rect(0, h * 0.18f, w, 90 * s), "CUBO RUSH", 72, TextAnchor.MiddleCenter, ciano, s);
-                Texto(new Rect(0, h * 0.36f, w, 40 * s), "Espaço, clique ou toque para começar", 28, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.50f, w, 34 * s), "A / D ou setas: trocar de faixa", 22, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.55f, w, 34 * s), "W, seta para cima ou Espaço: pular", 22, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.60f, w, 34 * s), "S ou seta para baixo: deslizar", 22, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.65f, w, 34 * s), "Esc ou P: pausar   |   No celular: deslize o dedo", 22, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.70f, w, 34 * s), "Cor: E avança / Q volta | Clique esquerdo ou toque também avança", 20, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.75f, w, 34 * s), "Portais: atravesse com o Sol na mesma cor para não levar dano", 22, TextAnchor.MiddleCenter, ciano, s);
-                Texto(new Rect(0, h * 0.79f, w, 30 * s), "Moedas: cor igual recupera estabilidade; outra cor reduz estabilidade", 19, TextAnchor.MiddleCenter, ouro, s);
-                Texto(new Rect(0, h * 0.84f, w, 34 * s), "Recorde: " + Recorde + "     Moedas acumuladas: " + MoedasTotal, 22, TextAnchor.MiddleCenter, ouro, s);
+            {
+                Fundo(w, h, 1f);
+                float yTitulo = topo + segura.height * 0.13f;
+                TextoBrilhante(new Rect(0, yTitulo, w, 110 * s), "CUBO RUSH", 92, Color.white, laranjaSolar, s);
+                Texto(new Rect(0, yTitulo + 100 * s, w, 30 * s), "UMA CORRIDA ESTELAR ATÉ O BURACO NEGRO", 18,
+                    TextAnchor.MiddleCenter, new Color(1f, 0.78f, 0.55f, 0.9f), s, false);
+
+                Texto(new Rect(0, yTitulo + 150 * s, w, 40 * s), "ESPAÇO, CLIQUE OU TOQUE PARA COMEÇAR", 26,
+                    TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, pisca), s);
+
+                // Cartão de controles em duas colunas.
+                float larguraCartao = 760f * s, alturaCartao = 274f * s;
+                Rect cartao = new Rect(cx - larguraCartao * 0.5f, yTitulo + 215 * s, larguraCartao, alturaCartao);
+                Cartao(cartao, s);
+
+                float colA = cartao.x + 28 * s, colB = cartao.x + cartao.width * 0.5f + 10 * s;
+                float linha = cartao.y + 22 * s, passo = 38 * s;
+                Controle(colA, linha + passo * 0, "A / D", "trocar de faixa (ou setas)", s);
+                Controle(colA, linha + passo * 1, "W", "pular (ou espaço)", s);
+                Controle(colA, linha + passo * 2, "S", "agachar / deslizar", s);
+                Controle(colA, linha + passo * 3, "ESC / P", "pausar", s);
+                Controle(colB, linha + passo * 0, "E", "próxima cor do Sol", s);
+                Controle(colB, linha + passo * 1, "Q", "cor anterior", s);
+                Controle(colB, linha + passo * 2, "CLIQUE", "também avança a cor", s);
+                Controle(colB, linha + passo * 3, "TOQUE", "deslize o dedo no celular", s);
+
+                Rect dicas = new Rect(cartao.x + 24 * s, cartao.y + passo * 4 + 32 * s, cartao.width - 48 * s, 50 * s);
+                Texto(new Rect(dicas.x, dicas.y, dicas.width, 24 * s),
+                    "Portais: atravesse com o Sol na mesma cor para não levar dano.", 17,
+                    TextAnchor.MiddleCenter, EstiloUI.Ciano, s, false);
+                Texto(new Rect(dicas.x, dicas.y + 24 * s, dicas.width, 24 * s),
+                    "Moedas da mesma cor recuperam estabilidade; de outra cor, reduzem.", 17,
+                    TextAnchor.MiddleCenter, EstiloUI.Ouro, s, false);
+                Texto(new Rect(dicas.x, dicas.y + 48 * s, dicas.width, 24 * s),
+                    "Gravidade: pule as ondas, resista aos mini buracos negros e passe rente aos planetas.", 17,
+                    TextAnchor.MiddleCenter, new Color(0.85f, 0.6f, 1f), s, false);
+
+                Texto(new Rect(0, cartao.yMax + 18 * s, w, 28 * s),
+                    "RECORDE  " + Recorde + "        MOEDAS ACUMULADAS  " + MoedasTotal, 18,
+                    TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
                 break;
+            }
 
             case EstadoJogo.Pausado:
-                Texto(centro, "PAUSADO", 64, TextAnchor.MiddleCenter, Color.white, s);
-                Texto(new Rect(0, h * 0.58f, w, 40 * s), "Esc, P ou Espaço para continuar", 24, TextAnchor.MiddleCenter, Color.white, s);
+            {
+                Fundo(w, h, 0.8f);
+                float y = topo + segura.height * 0.5f;
+                TextoBrilhante(new Rect(0, y - 70 * s, w, 90 * s), "PAUSADO", 72, Color.white, EstiloUI.Ciano, s);
+                Texto(new Rect(0, y + 22 * s, w, 34 * s), "ESC, P OU ESPAÇO PARA CONTINUAR", 22,
+                    TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, pisca), s);
                 break;
+            }
 
             case EstadoJogo.FimDeJogo:
-                Texto(new Rect(0, h * 0.25f, w, 90 * s), "FIM DE JOGO", 64, TextAnchor.MiddleCenter, new Color(1f, 0.35f, 0.35f), s);
-                Texto(new Rect(0, h * 0.42f, w, 50 * s), "Pontos: " + Mathf.FloorToInt(Pontos) + "     Moedas: " + Moedas, 32, TextAnchor.MiddleCenter, Color.white, s);
+            {
+                // Entra aos poucos para não cobrir a explosão do Sol logo de cara.
+                float entrada = Mathf.SmoothStep(0f, 1f, (Time.unscaledTime - momentoFim - 0.35f) / 0.6f);
+                if (entrada <= 0f) break;
+                Color corAntes = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, entrada);
+                Fundo(w, h, 0.9f);
+
+                float larguraCartao = 520f * s, alturaCartao = 300f * s;
+                float yCartao = topo + segura.height * 0.5f - alturaCartao * 0.5f + (1f - entrada) * 30f * s;
+                Rect cartao = new Rect(cx - larguraCartao * 0.5f, yCartao, larguraCartao, alturaCartao);
+
+                TextoBrilhante(new Rect(0, cartao.y - 100 * s, w, 90 * s), "FIM DE JOGO", 68,
+                    Color.white, new Color(1f, 0.30f, 0.32f), s);
+                Cartao(cartao, s);
+
+                Texto(new Rect(cartao.x, cartao.y + 22 * s, cartao.width, 22 * s), "PONTUAÇÃO", 16,
+                    TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
+                Texto(new Rect(cartao.x, cartao.y + 44 * s, cartao.width, 74 * s), Mathf.FloorToInt(Pontos).ToString(), 64,
+                    TextAnchor.MiddleCenter, Color.white, s);
+
                 if (novoRecorde)
-                    Texto(new Rect(0, h * 0.50f, w, 50 * s), "NOVO RECORDE!", 32, TextAnchor.MiddleCenter, ouro, s);
-                Texto(new Rect(0, h * 0.62f, w, 40 * s), "Espaço, clique ou toque para jogar de novo", 26, TextAnchor.MiddleCenter, Color.white, s);
+                {
+                    Rect selo = new Rect(cx - 110 * s, cartao.y + 124 * s, 220 * s, 32 * s);
+                    Color antes = GUI.color;
+                    GUI.color = new Color(EstiloUI.Ouro.r, EstiloUI.Ouro.g, EstiloUI.Ouro.b, (0.22f + 0.12f * pisca) * entrada);
+                    GUI.Box(selo, GUIContent.none, estiloTecla);
+                    GUI.color = antes;
+                    Texto(selo, "NOVO RECORDE!", 18, TextAnchor.MiddleCenter, EstiloUI.Ouro, s);
+                }
+                else
+                {
+                    Texto(new Rect(cartao.x, cartao.y + 124 * s, cartao.width, 32 * s), "RECORDE  " + Recorde, 18,
+                        TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
+                }
+
+                // Moedas e tempo de corrida lado a lado.
+                float yInfo = cartao.y + 178 * s;
+                float metade = cartao.width * 0.5f;
+                Texto(new Rect(cartao.x, yInfo, metade, 22 * s), "MOEDAS", 14, TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
+                Texto(new Rect(cartao.x, yInfo + 20 * s, metade, 36 * s), Moedas.ToString(), 30, TextAnchor.MiddleCenter, EstiloUI.Ouro, s);
+                int segundos = Mathf.FloorToInt(TempoDeJogo);
+                Texto(new Rect(cartao.x + metade, yInfo, metade, 22 * s), "TEMPO", 14, TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
+                Texto(new Rect(cartao.x + metade, yInfo + 20 * s, metade, 36 * s), (segundos / 60) + ":" + (segundos % 60).ToString("00"),
+                    30, TextAnchor.MiddleCenter, EstiloUI.Ciano, s);
+
+                Texto(new Rect(0, cartao.yMax + 24 * s, w, 34 * s), "ESPAÇO, CLIQUE OU TOQUE PARA JOGAR DE NOVO", 22,
+                    TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, pisca), s);
+                GUI.color = corAntes;
                 break;
+            }
         }
     }
 
-    void Texto(Rect r, string texto, int tamanho, TextAnchor alinhamento, Color cor, float s)
+    /// <summary>Escurece a tela com um degradê (mais escuro embaixo).</summary>
+    void Fundo(float w, float h, float opacidade)
+    {
+        Color antes = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, antes.a * opacidade);
+        GUI.DrawTexture(new Rect(0, 0, w, h), EstiloUI.TexturaGradiente, ScaleMode.StretchToFill);
+        GUI.color = antes;
+    }
+
+    /// <summary>Cartão escuro com moldura neon fina.</summary>
+    void Cartao(Rect r, float s)
+    {
+        Color antes = GUI.color;
+        GUI.color = new Color(0.03f, 0.04f, 0.09f, 0.86f * antes.a);
+        GUI.Box(r, GUIContent.none, estiloCartao);
+        GUI.color = new Color(1f, 0.55f, 0.25f, 0.45f * antes.a);
+        GUI.Box(r, GUIContent.none, estiloContorno);
+        GUI.color = antes;
+    }
+
+    /// <summary>Tecla desenhada como uma pastilha, seguida da ação.</summary>
+    void Controle(float x, float y, string tecla, string acao, float s)
+    {
+        estilo.fontSize = Mathf.RoundToInt(15 * s);
+        float larguraTecla = Mathf.Max(estilo.CalcSize(new GUIContent(tecla)).x + 22 * s, 44 * s);
+        Rect pastilha = new Rect(x, y, larguraTecla, 28 * s);
+        Color antes = GUI.color;
+        GUI.color = new Color(1f, 1f, 1f, 0.10f * antes.a);
+        GUI.Box(pastilha, GUIContent.none, estiloTecla);
+        GUI.color = antes;
+        Texto(pastilha, tecla, 15, TextAnchor.MiddleCenter, Color.white, s, false);
+        Texto(new Rect(x + larguraTecla + 12 * s, y, 300 * s, 28 * s), acao, 18, TextAnchor.MiddleLeft,
+            new Color(0.86f, 0.90f, 0.98f), s, false);
+    }
+
+    /// <summary>Título com um halo colorido em volta das letras.</summary>
+    void TextoBrilhante(Rect r, string texto, int tamanho, Color cor, Color halo, float s)
+    {
+        estilo.fontSize = Mathf.RoundToInt(tamanho * s);
+        estilo.alignment = TextAnchor.MiddleCenter;
+        for (int i = 0; i < 12; i++)
+        {
+            float ang = i * Mathf.PI * 2f / 12f;
+            float raio = (i % 2 == 0 ? 5f : 2.5f) * s;
+            estilo.normal.textColor = new Color(halo.r, halo.g, halo.b, i % 2 == 0 ? 0.10f : 0.22f);
+            GUI.Label(new Rect(r.x + Mathf.Cos(ang) * raio, r.y + Mathf.Sin(ang) * raio, r.width, r.height), texto, estilo);
+        }
+        estilo.normal.textColor = cor;
+        GUI.Label(r, texto, estilo);
+    }
+
+    void Texto(Rect r, string texto, int tamanho, TextAnchor alinhamento, Color cor, float s, bool sombra = true)
     {
         estilo.fontSize = Mathf.RoundToInt(tamanho * s);
         estilo.alignment = alinhamento;
-
         // Sombra para o texto ficar legível sobre qualquer fundo.
-        estilo.normal.textColor = Color.black;
-        GUI.Label(new Rect(r.x + 2 * s, r.y + 2 * s, r.width, r.height), texto, estilo);
+        if (sombra)
+        {
+            estilo.normal.textColor = new Color(0f, 0f, 0f, 0.8f * cor.a);
+            GUI.Label(new Rect(r.x + 2 * s, r.y + 2 * s, r.width, r.height), texto, estilo);
+        }
 
         estilo.normal.textColor = cor;
         GUI.Label(r, texto, estilo);

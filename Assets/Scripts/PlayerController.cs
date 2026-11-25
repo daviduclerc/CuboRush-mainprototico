@@ -31,11 +31,25 @@ public class PlayerController : MonoBehaviour
     [Header("Pulo")]
     public float forcaPulo = 10f;
     public float gravidade = 28f;
+    [Tooltip("Multiplicador vindo da atração do buraco negro (1 = normal).")]
+    [HideInInspector] public float multiplicadorGravidade = 1f;
+    /// <summary>Gravidade sentida agora: cresce com a atração do buraco negro.</summary>
+    public float GravidadeAtual => gravidade * Mathf.Max(0.1f, multiplicadorGravidade);
     [Tooltip("Velocidade de descida ao apertar para baixo no ar.")]
     public float quedaRapida = 22f;
 
     [Header("Deslize")]
     public float duracaoDeslize = 0.7f;
+
+    [Header("Poço gravitacional (ao abaixar)")]
+    [Tooltip("Profundidade do funil embaixo do Sol, em unidades de mundo.")]
+    public float profundidadePoco = 0.75f;
+    [Tooltip("Raio do fundo do funil: maior = poço mais largo e suave.")]
+    public float nucleoPoco = 1.6f;
+    [Tooltip("Até que distância do Sol o espaço se curva.")]
+    public float alcancePoco = 5f;
+    [Tooltip("Altura da onda que percorre o espaço quando o Sol afunda e quando sai.")]
+    public float amplitudeOndaPoco = 0.18f;
 
     [Header("Toque")]
     [Tooltip("Distância mínima (em pixels) para contar como deslize do dedo.")]
@@ -47,31 +61,64 @@ public class PlayerController : MonoBehaviour
     public int CorId { get; private set; }
     public Color CorAtual => Cores[CorId];
     public float Vida { get; private set; } = VidaMaxima;
-    public Color CorVisualAtual
+    /// <summary>O menor entre vida e estabilidade: é ele que define o quanto o Sol está em perigo.</summary>
+    public float Perigo
     {
         get
         {
             GameManager jogo = GameManager.Instancia;
             float estabilidade = jogo != null ? jogo.Estabilidade : 100f;
-            float perigo = Mathf.Min(Vida, estabilidade);
-            float faseDano = Mathf.InverseLerp(100f, 0f, perigo);
-            Color cor = Color.Lerp(CorAtual, new Color(1f, 0.025f, 0.035f), faseDano * 0.72f);
-            if (perigo <= 30f)
-                cor *= 0.86f + 0.14f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f));
+            return Mathf.Min(Vida, estabilidade);
+        }
+    }
+
+    /// <summary>
+    /// Batimento do Sol em perigo (0 a ~1): duas pulsadas curtas, como um coração,
+    /// que aceleram conforme a vida ou a estabilidade caem. Zero acima de 30%.
+    /// Todos os efeitos de perigo usam este mesmo ritmo, para a leitura ser única.
+    /// </summary>
+    public float BatimentoPerigo
+    {
+        get
+        {
+            float perigo = Perigo;
+            if (perigo > 30f || perigo <= 0f) return 0f;
+            float urgencia = Mathf.InverseLerp(30f, 0f, perigo);
+            float ritmo = Mathf.Lerp(1.1f, 2.3f, urgencia); // batidas por segundo
+            float f = Mathf.Repeat(Time.unscaledTime * ritmo, 1f);
+            float primeira = Mathf.Exp(-Mathf.Pow((f - 0.08f) / 0.055f, 2f));
+            float segunda = 0.65f * Mathf.Exp(-Mathf.Pow((f - 0.30f) / 0.055f, 2f));
+            return (primeira + segunda) * Mathf.Lerp(0.6f, 1f, urgencia);
+        }
+    }
+
+    /// <summary>
+    /// Cor com que o Sol é desenhado. A matiz é SEMPRE a da cor escolhida, porque é ela
+    /// que o jogador compara com moedas e portais. O decaimento aparece só no brilho:
+    /// o Sol vai perdendo energia (fica mais fraco) e, abaixo de 30%, pulsa no batimento.
+    /// </summary>
+    public Color CorVisualAtual
+    {
+        get
+        {
+            float energia = Mathf.Lerp(0.55f, 1f, Mathf.InverseLerp(5f, 70f, Perigo));
+            Color cor = CorAtual * (energia + 0.55f * BatimentoPerigo);
+            cor.a = 1f;
             return cor;
         }
     }
     public Transform VisualSolar => visualSolarRaiz;
     public bool Deslizando { get; private set; }
-    public float ProporcaoAbaixado => 1f - achatamento * 0.30f;
+    /// <summary>0 = espaço plano, 1 = poço gravitacional totalmente aberto durante o deslize.</summary>
+    public float Afundamento => Mathf.SmoothStep(0f, 1f, achatamento);
     public bool NoChao => altura <= 0f && velocidadeY <= 0f;
     public float VelocidadeVertical => velocidadeY;
     public bool Invencivel => Time.time < invencivelAte;
 
     /// <summary>Altura máxima do pulo (usada para posicionar moedas em arco).</summary>
-    public float AlturaMaximaPulo => forcaPulo * forcaPulo / (2f * gravidade);
+    public float AlturaMaximaPulo => forcaPulo * forcaPulo / (2f * GravidadeAtual);
     /// <summary>Tempo total no ar em um pulo.</summary>
-    public float TempoNoAr => 2f * forcaPulo / gravidade;
+    public float TempoNoAr => 2f * forcaPulo / GravidadeAtual;
 
     float AlturaCorpo => Deslizando ? 0.5f : 1f;
 
@@ -86,7 +133,7 @@ public class PlayerController : MonoBehaviour
     float esperaPulo;      // guarda o comando de pulo por um instante
     bool deslizarAoPousar;
     float giro;
-    float achatamento;     // 0 = normal, 1 = achatado durante o deslize
+    float achatamento;     // 0 = normal, 1 = afundado durante o deslize
     float giroDeslize;
     float rolamentoLateral;
     float giroSolar;
@@ -113,6 +160,10 @@ public class PlayerController : MonoBehaviour
     Vector2 inicioToque;
     bool toqueValido, toqueUsado;
     bool morto;
+
+    // Puxão lateral de mini buracos negros.
+    float arrasto;            // 1 logo após o puxão, cai até 0 (inclinação visual)
+    int direcaoArrasto;       // -1 = para a esquerda, +1 = para a direita
 
     void Start()
     {
@@ -160,6 +211,7 @@ public class PlayerController : MonoBehaviour
             gameObject.AddComponent<SolarMotionFlames>();
         rodaCores = GetComponent<ColorWheelUI>();
         if (rodaCores != null) { rodaCores.Cancelar(); Destroy(rodaCores); rodaCores = null; }
+        PocoGravitacional.Reiniciar();
 
     }
 
@@ -170,6 +222,7 @@ public class PlayerController : MonoBehaviour
 
         // Ignora o primeiro instante para o comando que inicia o jogo não virar ação.
         if (jogo.TempoDeJogo > 0.1f) LerEntrada(jogo);
+        AtualizarArrasto(jogo);
 
         Vector3 p = transform.position;
 
@@ -177,7 +230,8 @@ public class PlayerController : MonoBehaviour
         p.z += jogo.Velocidade * Time.deltaTime;
 
         // Troca de faixa.
-        float alvoX = PosicaoXDaFaixa(FaixaAtual);
+        // O puxão de um mini buraco negro inclina o Sol para o lado dele antes de arrastá-lo.
+        float alvoX = PosicaoXDaFaixa(FaixaAtual) + direcaoArrasto * arrasto * 0.35f;
         p.x = Mathf.SmoothDamp(p.x, alvoX, ref velocidadeLateralSuavizada,
             0.08f, velocidadeTroca * 2.5f, Time.deltaTime);
         if (Mathf.Abs(p.x - alvoX) < 0.001f)
@@ -210,7 +264,7 @@ public class PlayerController : MonoBehaviour
 
         if (!NoChao)
         {
-            velocidadeY -= gravidade * Time.deltaTime;
+            velocidadeY -= GravidadeAtual * Time.deltaTime;
             altura += velocidadeY * Time.deltaTime;
             giro += 360f / TempoNoAr * Time.deltaTime;
 
@@ -247,9 +301,12 @@ public class PlayerController : MonoBehaviour
             if (Mathf.Approximately(giroDeslize, encaixe) && achatamento <= 0f) giroDeslize = 0f;
         }
 
-        // Ao abaixar, o Sol encolhe por igual e volta suavemente ao tamanho base.
+        // Ao abaixar, o Sol pesa sobre a pista: o próprio chão afunda em funil ao redor
+        // dele, como nos diagramas de buraco negro, e as paredes próximas acompanham.
         // As deformações dos eixos ficam reservadas para o preparo e o impulso do pulo.
-        float escalaAbaixado = 1f - achatamento * 0.30f;
+        PocoGravitacional.Atualizar(new Vector2(p.x, p.z), Afundamento, profundidadePoco, nucleoPoco,
+            alcancePoco, quantidadeFaixas * larguraFaixa / 2f, amplitudeOndaPoco, Time.deltaTime);
+        float afundamento = PocoGravitacional.Deslocamento(p.x, p.z);
         float squashLateral = preparandoPulo ? 0.22f : 0f;
         float squashVertical = preparandoPulo ? 0.18f : 0f;
         if (!NoChao && tempoDecolagem > 0f)
@@ -315,25 +372,27 @@ public class PlayerController : MonoBehaviour
             float perigo = Mathf.Min(Vida, jogo.Estabilidade);
             float faseGigante = Mathf.InverseLerp(60f, 30f, perigo);
             float fasePulso = Mathf.InverseLerp(30f, 0f, perigo);
-            float pulsoPerigo = perigo <= 30f
-                ? 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f) : 0f;
-            float escalaPerigo = 1f + 0.18f * faseGigante + 0.035f * fasePulso + 0.04f * pulsoPerigo * fasePulso;
+            // Mesmo batimento da vinheta e do HUD: o Sol "pulsa" de tamanho e de brilho juntos.
+            float pulsoPerigo = BatimentoPerigo;
+            float escalaPerigo = 1f + 0.18f * faseGigante + 0.035f * fasePulso + 0.07f * pulsoPerigo;
             // O pai aplica a compressão no eixo vertical fixo da pista; a esfera
             // gira como filha sem girar junto o eixo do squash.
             deformacaoSolar.localScale = new Vector3(
-                escalaPerigo * escalaAbaixado * (1f + squashVertical * 0.50f + squashLateral),
-                escalaPerigo * escalaAbaixado * (1f - squashVertical),
-                escalaPerigo * escalaAbaixado * (1f + squashVertical * 0.50f + squashLateral));
+                escalaPerigo * (1f + squashVertical * 0.50f + squashLateral),
+                escalaPerigo * (1f - squashVertical),
+                escalaPerigo * (1f + squashVertical * 0.50f + squashLateral));
             visualSolarRaiz.localScale = escalaSolarOriginal;
             visualSolarRaiz.localRotation = Quaternion.AngleAxis(rolamentoLateral, Vector3.forward)
                 * Quaternion.AngleAxis(giroSolar, Vector3.up);
             transform.rotation = Quaternion.identity;
             // Apoio pela fotosfera, sem oscilar com a coroa, a rotação ou a piscada.
-            p.y = altura + raioSolarBase * deformacaoSolar.localScale.y - deformacaoSolar.localPosition.y;
+            // Ao deslizar, desce junto com o fundo do poço e continua apoiado no piso curvado.
+            float raioAtual = raioSolarBase * deformacaoSolar.localScale.y;
+            p.y = altura + raioAtual - deformacaoSolar.localPosition.y - afundamento;
         }
         else
         {
-            p.y = altura + alturaVisual / 2f;
+            p.y = altura + alturaVisual / 2f - afundamento;
             transform.rotation = Quaternion.Euler(giro, giroDeslize, rolamentoLateral);
             transform.localScale = new Vector3(larguraVisual, alturaVisual, profundidadeVisual);
         }
@@ -399,6 +458,42 @@ public class PlayerController : MonoBehaviour
                 toqueValido = false;
             }
         }
+    }
+
+    /// <summary>
+    /// Puxão de um mini buraco negro: arrasta o Sol uma faixa na direção dele (-1 ou +1)
+    /// na hora, com uma inclinação rápida para o lado que reforça o tranco.
+    /// </summary>
+    public void PuxarUmaFaixa(int direcao)
+    {
+        direcao = direcao < 0 ? -1 : 1;
+        int antes = FaixaAtual;
+        MudarFaixa(direcao);
+        if (FaixaAtual == antes) return;
+        // Chega mais rápido que uma troca normal: a velocidade lateral já começa alta.
+        velocidadeLateralSuavizada = direcao * velocidadeTroca * 2.2f;
+        direcaoArrasto = direcao;
+        arrasto = 1f;
+        CameraFollow.Tremer(0.22f, 0.3f);
+    }
+
+    /// <summary>
+    /// O buraco negro suga o Sol para baixo: interrompe o pulo e cancela o deslize,
+    /// então não dá para passar por cima nem por baixo dele.
+    /// </summary>
+    public void SugarParaBaixo()
+    {
+        if (!NoChao && velocidadeY > -quedaRapida) velocidadeY = -quedaRapida;
+        esperaPulo = 0f;
+        preparandoPulo = false;
+        deslizarAoPousar = false;
+        Deslizando = false;
+    }
+
+    /// <summary>O tranco do puxão some aos poucos (só visual: inclina o Sol na direção do buraco).</summary>
+    void AtualizarArrasto(GameManager jogo)
+    {
+        arrasto = Mathf.MoveTowards(arrasto, 0f, 3.5f * Time.deltaTime);
     }
 
     /// <summary>Move uma faixa para a esquerda (-1) ou direita (+1), sem sair da pista.</summary>
@@ -501,6 +596,8 @@ public class PlayerController : MonoBehaviour
     {
         if (morto) return;
         morto = true;
+        // O espaço volta a ficar plano quando o Sol se desfaz.
+        PocoGravitacional.Reiniciar();
         for (int i = 0; i < visuais.Length; i++)
             if (visuais[i] != null) visuais[i].enabled = false;
         if (orbeEscudo != null) orbeEscudo.gameObject.SetActive(false);

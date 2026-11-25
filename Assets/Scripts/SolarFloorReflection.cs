@@ -36,11 +36,13 @@ public sealed class SolarFloorReflection : MonoBehaviour
         bool morto = jogo != null && jogo.Estado == EstadoJogo.FimDeJogo;
         render.enabled = !morto;
         reflexo.position = new Vector3(sol.position.x, 0.045f, sol.position.z - 1.15f);
-        float tamanho = jogador.ProporcaoAbaixado;
+        float tamanho = 1f;
         reflexo.localScale = new Vector3(2.5f * tamanho, 5.0f * tamanho, 1f);
         float proximidade = 1f / (1f + Mathf.Max(0f, sol.position.y - 0.45f) * 0.85f);
         Color cor = jogador.CorVisualAtual;
         cor.a = Mathf.SmoothStep(0.02f, 0.95f, energiaSuavizada) * proximidade;
+        // O brilho é um plano reto: some enquanto o piso está curvado pelo poço gravitacional.
+        cor.a *= 1f - PocoGravitacional.Intensidade;
         material.SetColor("_Tint", cor);
     }
 

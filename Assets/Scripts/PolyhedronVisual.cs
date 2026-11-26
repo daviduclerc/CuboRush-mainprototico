@@ -6,6 +6,7 @@ public static class PolyhedronVisual
 {
     static readonly Dictionary<Color, Material> materiaisVisiveis = new Dictionary<Color, Material>();
 
+    static readonly Dictionary<Color, Material> bordasColoridas = new Dictionary<Color, Material>();
     static readonly Dictionary<int, Mesh> malhas = new Dictionary<int, Mesh>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -15,6 +16,7 @@ public static class PolyhedronVisual
         // geradas da sessão anterior podem já ter sido destruídas pela Unity.
         malhas.Clear();
         materiaisVisiveis.Clear();
+        bordasColoridas.Clear();
     }
 
     public static GameObject Criar(string nome, Transform pai, Vector3 posicao,
@@ -27,18 +29,21 @@ public static class PolyhedronVisual
         objeto.AddComponent<MeshFilter>().sharedMesh = Malha(lados);
         if (!materiaisVisiveis.TryGetValue(cor, out Material material) || material == null)
         {
-            Color baseVisivel = Color.Lerp(cor, Color.white, 0.15f);
-            material = new Material(Visual.MatMetal(baseVisivel, 0.38f));
+            Color baseVisivel = cor;
+            material = new Material(TechObstacleMaterials.Obter(false));
+            material.color = baseVisivel * 1.6f;
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", baseVisivel * 1.6f);
             material.name = "Liga visivel dos obstaculos";
             material.EnableKeyword("_EMISSION");
-            material.SetColor("_EmissionColor", baseVisivel * 0.6f);
+            material.SetColor("_EmissionColor", baseVisivel * 2.8f);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.25f);
             if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.55f);
             materiaisVisiveis[cor] = material;
         }
         bool meteoro = nome.Contains("Meteoro");
-        bool ceramica = false;
-        objeto.AddComponent<MeshRenderer>().sharedMaterial = meteoro ? material : TechObstacleMaterials.Obter(ceramica);
-        if (!meteoro) CriarBordas(objeto.transform, lados, ceramica);
+
+        objeto.AddComponent<MeshRenderer>().sharedMaterial = material;
+        if (!meteoro) CriarBordas(objeto.transform, lados, cor);
         objeto.AddComponent<PolyhedronHitShape>().Inicializar(lados);
         return objeto;
     }
@@ -55,7 +60,7 @@ public static class PolyhedronVisual
             filtro.sharedMesh = Malha(forma.QuantidadeLados);
         corpo.enabled = true;
         corpo.forceRenderingOff = false;
-        corpo.sharedMaterial = TechObstacleMaterials.Obter(false);
+        if (corpo.sharedMaterial == null) corpo.sharedMaterial = TechObstacleMaterials.Obter(false);
     }
 
     static Mesh Malha(int lados)
@@ -109,8 +114,14 @@ public static class PolyhedronVisual
         return malha;
     }
 
-    static void CriarBordas(Transform pai, int lados, bool ceramica)
+    static void CriarBordas(Transform pai, int lados, Color cor)
     {
+        if (!bordasColoridas.TryGetValue(cor, out Material borda) || borda == null)
+        {
+            borda = new Material(TechObstacleMaterials.Borda(false));
+            borda.color = cor * 3.2f;
+            bordasColoridas[cor] = borda;
+        }
         var pontos = new Vector3[lados];
         Vector2 min = Vector2.one * float.PositiveInfinity;
         Vector2 max = Vector2.one * float.NegativeInfinity;
@@ -128,7 +139,7 @@ public static class PolyhedronVisual
             linha.loop = true;
             linha.positionCount = lados;
             linha.widthMultiplier = 0.018f;
-            linha.sharedMaterial = TechObstacleMaterials.Borda(ceramica);
+            linha.sharedMaterial = borda;
             linha.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             linha.receiveShadows = false;
             for (int i = 0; i < lados; i++)
@@ -149,3 +160,5 @@ public static class PolyhedronVisual
         indices.Add(inicio); indices.Add(inicio + 1); indices.Add(inicio + 2);
     }
 }
+
+

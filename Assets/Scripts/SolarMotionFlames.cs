@@ -16,7 +16,9 @@ public sealed class SolarMotionFlames : MonoBehaviour
     float reforcoTraseiro;
     Material material;
     Material materialLateral;
+    Material materialTraseiro;
     float ultimoSentidoLateral;
+    bool caudaLateralAtiva;
     Transform anelPulo;
     Material materialAnel;
     Mesh malhaAnel;
@@ -26,6 +28,7 @@ public sealed class SolarMotionFlames : MonoBehaviour
     bool estavaNoChao;
     float acumuladorLateral;
     float escalaInicial;
+    float raioCorpo;
     float volumeInicial = 1f;
 
     EstadoJogo estadoAnterior = EstadoJogo.Menu;
@@ -43,6 +46,12 @@ public sealed class SolarMotionFlames : MonoBehaviour
             return;
         }
         escalaInicial = Mathf.Max(0.01f, sol.localScale.x);
+        // Usa a superfície real: a escala da raiz sozinha não é o raio da esfera.
+        raioCorpo = escalaInicial;
+        Transform superficie = sol.Find("Fotosfera");
+        MeshFilter filtro = superficie != null ? superficie.GetComponent<MeshFilter>() : null;
+        if (filtro != null && filtro.sharedMesh != null)
+            raioCorpo = filtro.sharedMesh.bounds.extents.z * Mathf.Abs(superficie.localScale.z * sol.localScale.z);
         Vector3 escalaBase = sol.parent != null ? sol.parent.lossyScale : Vector3.one;
         volumeInicial = Mathf.Max(0.001f, Mathf.Abs(escalaBase.x * escalaBase.y * escalaBase.z));
         material = new Material(shader) { name = "Plasma do movimento solar" };
@@ -54,11 +63,16 @@ public sealed class SolarMotionFlames : MonoBehaviour
         renderLateral.lengthScale = 1.8f;
         pouso = CriarSistema("ClaraoDoPouso", false, 48);
         labaredaTraseira = CriarSistema("LabaredaTraseiraDeTransformacao", true, 100);
+        labaredaTraseira.GetComponent<ParticleSystemRenderer>().cameraVelocityScale = 0f;
         proporcaoAbaixadoAnterior = jogador.ProporcaoAbaixado;
         origemRastroPulo = new GameObject("ArcoDePlasmaDoPulo").transform;
         origemRastroPulo.position = new Vector3(0f, 0f, transform.position.z);
         rastroPulo = CriarSistema("LabaredaCurvaDoPulo", false, 160);
         rastroPulo.transform.SetParent(origemRastroPulo, false);
+        materialTraseiro = new Material(material) { name = "Cauda atras da superficie solar" };
+        materialTraseiro.SetFloat("_RearOnly", 1f);
+        labaredaTraseira.GetComponent<ParticleSystemRenderer>().sharedMaterial = materialTraseiro;
+        rastroPulo.GetComponent<ParticleSystemRenderer>().sharedMaterial = materialTraseiro;
         centroSolarAnterior = sol.position;
         CriarAnelDoPulo();
         posicaoAnterior = transform.position;
@@ -125,9 +139,15 @@ public sealed class SolarMotionFlames : MonoBehaviour
         origem.localScale = Vector3.one * proporcao;
         origemRastroPulo.position = new Vector3(0f, 0f, transform.position.z);
         material.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+        materialTraseiro.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+        materialTraseiro.SetVector("_SourceCenter", sol.position);
+        Vector3 raios = new Vector3(Mathf.Abs(escalaCorpo.x), Mathf.Abs(escalaCorpo.y), Mathf.Abs(escalaCorpo.z)) * raioCorpo;
+        materialTraseiro.SetVector("_SolarMaskRadii", raios * 0.98f);
+        materialLateral.SetVector("_SolarMaskRadii", raios * 0.98f);
+        materialTraseiro.SetFloat("_RearClipDistance", raios.z * 0.85f);
         materialLateral.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
         materialLateral.SetVector("_SourceCenter", sol.position);
-        materialLateral.SetFloat("_CutDistance", escalaInicial * proporcao * 0.50f);
+        materialLateral.SetFloat("_CutDistance", raioCorpo * proporcao * 0.80f);
         if (estado != EstadoJogo.Jogando)
         {
             if (estado == EstadoJogo.Pausado)
@@ -147,8 +167,10 @@ public sealed class SolarMotionFlames : MonoBehaviour
             }
             centroSolarAnterior = sol.position;
             emissaoPulo = 0f;
-            proporcaoAbaixadoAnterior = jogador.ProporcaoAbaixado;
+            labaredaTraseira.GetComponent<ParticleSystemRenderer>().cameraVelocityScale = 0f;
+        proporcaoAbaixadoAnterior = jogador.ProporcaoAbaixado;
             emissaoTraseira = reforcoTraseiro = 0f;
+            caudaLateralAtiva = false;
             acumuladorLateral = 0f;
             posicaoAnterior = transform.position;
             estavaNoChao = jogador.NoChao;
@@ -168,6 +190,10 @@ public sealed class SolarMotionFlames : MonoBehaviour
         float velocidadeX = (transform.position.x - posicaoAnterior.x) / dt;
         Vector3 centro = origem.InverseTransformPoint(sol.position);
         float raio = escalaInicial;
+        // Durante a esquiva, a chama lateral original substitui a traseira.
+        bool movimentoLateral = Mathf.Abs(velocidadeX) > 0.15f;
+        if (movimentoLateral && !caudaLateralAtiva) labaredaTraseira.Clear();
+        caudaLateralAtiva = movimentoLateral;
         AtualizarLabaredaTraseira(centro, raio, dt);
         AtualizarRastroPulo(dt, proporcao);
         if (Mathf.Abs(velocidadeX) > 0.1f)
@@ -186,7 +212,7 @@ public sealed class SolarMotionFlames : MonoBehaviour
             acumuladorLateral -= quantidade;
             for (int i = 0; i < quantidade; i++)
                 Emitir(chamas, centro + new Vector3(sentido * raio * 0.7f, Variar(-0.12f, 0.12f), Variar(-0.07f, 0.07f)),
-                    new Vector3(sentido * Variar(4.5f, 6f), Variar(-0.25f, 0.45f), Variar(-0.5f, 0.1f)), 0.32f, Mathf.Min(0.56f, escalaInicial * 6.5f / 6f));
+                    new Vector3(sentido * Mathf.Lerp(2.5f, 6f, Mathf.Clamp01(Mathf.Abs(velocidadeX) / 8f)), Variar(-0.25f, 0.45f), Variar(-0.5f, 0f)), 0.32f, Mathf.Min(0.56f, escalaInicial * 6.5f / 6f));
         }
         else acumuladorLateral = 0f;
 
@@ -228,8 +254,8 @@ public sealed class SolarMotionFlames : MonoBehaviour
             {
                 float t = (i + 1f) / Mathf.Max(1, quantidade);
                 Vector3 ponto = Vector3.Lerp(centroSolarAnterior, sol.position, t);
-                ponto += new Vector3(Variar(-0.06f, 0.06f), 0.02f, -escalaInicial * proporcao * 0.5f);
-                float tamanhoRastro = (jogador.NoChao ? 0.38f : 0.44f) * proporcao;
+                ponto += new Vector3(Variar(-0.06f, 0.06f), 0.02f, -raioCorpo * Mathf.Abs(sol.parent.lossyScale.z) * 1.05f);
+                float tamanhoRastro = (jogador.NoChao ? 0.50f : 0.60f) * proporcao;
                 ponto.y = Mathf.Max(ponto.y, tamanhoRastro * 0.5f + 0.035f);
                 float comprimentoMaximo = escalaInicial * proporcao * (jogador.NoChao ? 9f : 10.5f);
                 float duracaoRastro = Mathf.Clamp(comprimentoMaximo / Mathf.Max(1f, GameManager.Instancia.Velocidade + 0.45f), 0.05f, 0.58f);
@@ -250,19 +276,22 @@ public sealed class SolarMotionFlames : MonoBehaviour
         // Tanto a contração quanto a expansão lançam plasma para trás da corrida.
         if (variacao > 0.04f) reforcoTraseiro = 0.18f;
         else reforcoTraseiro = Mathf.Max(0f, reforcoTraseiro - dt);
-        if (reforcoTraseiro <= 0f) { emissaoTraseira = 0f; return; }
+        // O aumento vale para a chama constante (intensidade zero).
+        // Os tamanhos do arco de pulo e dos efeitos de contração são independentes.
         float intensidade = Mathf.Clamp01(reforcoTraseiro / 0.18f);
-        emissaoTraseira += dt * Mathf.Lerp(35f, 110f, intensidade);
+        intensidade = Mathf.Max(intensidade, jogador.Deslizando ? 1f : (!jogador.NoChao ? 0.75f : 0f));
+        if (caudaLateralAtiva || !jogador.NoChao) { emissaoTraseira = 0f; return; }
+        emissaoTraseira += dt * Mathf.Lerp(90f, 120f, intensidade);
         int quantidade = Mathf.Min(24, Mathf.FloorToInt(emissaoTraseira));
         emissaoTraseira -= quantidade;
         for (int i = 0; i < quantidade; i++)
         {
-            Vector3 baseChama = centro + new Vector3(Variar(-0.10f, 0.10f),
-                Variar(-0.03f, 0.12f), -raio * 0.82f);
-            Vector3 velocidade = new Vector3(Variar(-0.45f, 0.45f),
-                Variar(0.1f, 0.55f), -Variar(2.6f, 4.2f));
+            Vector3 baseChama = centro + new Vector3(Variar(-0.08f, 0.08f),
+                Variar(0.02f, 0.08f), -raioCorpo * 0.96f);
+            Vector3 velocidade = new Vector3(Variar(-0.12f, 0.12f),
+                Variar(0f, 0.16f), -Mathf.Lerp(5.472f, 5.8f, intensidade));
             Emitir(labaredaTraseira, baseChama, velocidade,
-                Mathf.Lerp(0.26f, 0.40f, intensidade), 0.54f);
+                Mathf.Lerp(0.72f, 0.60f, intensidade), Mathf.Lerp(0.36f, 0.48f, intensidade));
         }
         // A origem e as partículas usam a escala atual do Sol, sem herdar o giro.
     }
@@ -365,7 +394,16 @@ public sealed class SolarMotionFlames : MonoBehaviour
         if (origemRastroPulo != null) Destroy(origemRastroPulo.gameObject);
         if (material != null) Destroy(material);
         if (materialLateral != null) Destroy(materialLateral);
+        if (materialTraseiro != null) Destroy(materialTraseiro);
         if (materialAnel != null) Destroy(materialAnel);
         if (malhaAnel != null) Destroy(malhaAnel);
     }
 }
+
+
+
+
+
+
+
+

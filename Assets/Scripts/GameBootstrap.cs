@@ -54,7 +54,7 @@ public static class GameBootstrap
         else
         {
             Visual.Forma(PrimitiveType.Cube, "VisualDoJogador", cubo.transform,
-                Vector3.zero, Vector3.one, PlayerController.Cores[0]);
+                Vector3.zero, Vector3.one, PlayerController.Cores[PlayerController.CorDourada]);
         }
 
         PlayerController jogador = cubo.AddComponent<PlayerController>();
@@ -71,6 +71,10 @@ public static class GameBootstrap
         // Obstáculos, moedas e power-ups.
         ObstacleSpawner obstaculos = new GameObject("GeradorDeObstaculos").AddComponent<ObstacleSpawner>();
         obstaculos.jogador = jogador;
+        var desafio = Object.FindAnyObjectByType<MeteorChallenge>();
+        if (desafio == null) desafio = new GameObject("Desafio dos Meteoros").AddComponent<MeteorChallenge>();
+        desafio.jogador = jogador;
+        desafio.pista = obstaculos;
 
         // Estrelas de fundo.
         StarField estrelas = new GameObject("Estrelas").AddComponent<StarField>();

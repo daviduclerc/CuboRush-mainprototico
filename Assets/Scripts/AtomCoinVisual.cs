@@ -65,9 +65,8 @@ public sealed class AtomCoinVisual : MonoBehaviour
         if (GameManager.Instancia == null || GameManager.Instancia.Estado != EstadoJogo.Jogando) return;
         fase += Time.deltaTime;
         transform.localPosition = new Vector3(0f, elevacaoVisual + Mathf.Sin(fase * 2.3f) * 0.055f, 0f);
-        // Giro contínuo no próprio eixo, mantendo a face legível durante a rotação.
-        Quaternion frente = Camera.main != null ? Camera.main.transform.rotation : Quaternion.identity;
-        transform.rotation = frente * Quaternion.Euler(0f, Mathf.Sin(fase * 0.9f) * 18f, fase * 55f);
+        // Volta completa no eixo vertical da moeda, sem seguir a câmera.
+        transform.localRotation = Quaternion.Euler(0f, fase * 100f, 0f);
     }
 
     void EmitirFaiscas(Vector3 centro)
@@ -104,3 +103,5 @@ public sealed class AtomCoinVisual : MonoBehaviour
         Destroy(objeto, 0.6f);
     }
 }
+
+

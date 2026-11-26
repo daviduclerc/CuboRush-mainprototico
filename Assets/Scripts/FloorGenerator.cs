@@ -107,20 +107,33 @@ public class FloorGenerator : MonoBehaviour
 
             // Guarda-corpo de uma pista orbital: placas de liga escura e filete emissivo.
             float bordaX = lado * (larguraTotal / 2f + 0.27f);
-            GameObject guarda = Visual.Forma(PrimitiveType.Cube, "GuardaCorpoOrbital", raiz,
-                new Vector3(bordaX, 0.30f, comprimentoPedaco / 2f),
-                new Vector3(0.12f, 0.58f, comprimentoPedaco), new Color(0.035f, 0.055f, 0.095f), false, raio: 0.035f);
+            GameObject guarda = Visual.Forma(PrimitiveType.Cube, "BarricadaOrbital", raiz,
+                new Vector3(bordaX, 0.48f, comprimentoPedaco / 2f),
+                new Vector3(0.22f, 0.96f, comprimentoPedaco), new Color(0.035f, 0.055f, 0.095f), false, raio: 0.035f);
             guarda.GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(new Color(0.035f, 0.055f, 0.095f), 0.82f);
 
+            Color cianoBarricada = new Color(0.04f, 0.85f, 1f);
+            Visual.Forma(PrimitiveType.Cube, "CorrimaoDaBarricada", raiz,
+                new Vector3(bordaX, 0.99f, comprimentoPedaco / 2f),
+                new Vector3(0.28f, 0.10f, comprimentoPedaco), metal, false, raio: 0.025f)
+                .GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(metal, 0.78f);
+            Visual.Forma(PrimitiveType.Cube, "GuiaDaBarricada", raiz,
+                new Vector3(bordaX - lado * 0.12f, 0.88f, comprimentoPedaco / 2f),
+                new Vector3(0.018f, 0.035f, comprimentoPedaco), cianoBarricada, true, raio: 0f);
+            for (float z = 1f; z < comprimentoPedaco; z += 2.5f)
+                Visual.Forma(PrimitiveType.Cube, "LinhaVerticalDaBarricada", raiz,
+                    new Vector3(bordaX - lado * 0.16f, 0.51f, z),
+                    new Vector3(0.018f, 0.76f, 0.045f), cianoBarricada, true, raio: 0f);
             // Travessas curtas dão escala e profundidade às laterais sem bloquear a pista.
-            for (float z = 1f; z < comprimentoPedaco; z += 4f)
+            for (float z = 1f; z < comprimentoPedaco; z += 2.5f)
             {
                 Visual.Forma(PrimitiveType.Cube, "SuporteDoGuardaCorpo", raiz,
-                    new Vector3(bordaX, 0.12f, z), new Vector3(0.18f, 0.18f, 0.16f),
+                    new Vector3(bordaX, 0.50f, z), new Vector3(0.30f, 1.05f, 0.13f),
                     metal, false, raio: 0.02f).GetComponent<Renderer>().sharedMaterial = Visual.MatMetal(metal, 0.72f);
             }
         }
         return raiz;
     }
 }
+
 

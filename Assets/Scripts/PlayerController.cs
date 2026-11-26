@@ -12,7 +12,10 @@ using UnityEngine.InputSystem;
 public class PlayerController : MonoBehaviour
 {
     public const float VidaMaxima = 100f;
+    public const float TempoPreparoPulo = 0.075f;
+    public const int CorDourada = 3;
     const float DuracaoInvulnerabilidadeDano = 1.8f;
+    static readonly Color TomSolarDourado = new Color(1f, 0.52f, 0.09f);
     /// <summary>Quatro cores que identificam o Sol, as moedas e as paredes.</summary>
     public static readonly Color[] Cores =
     {
@@ -44,18 +47,18 @@ public class PlayerController : MonoBehaviour
     /// <summary>Faixa atual, de 0 (esquerda) até quantidadeFaixas - 1 (direita).</summary>
     public int FaixaAtual { get; private set; }
     /// <summary>Índice da cor atual dentro de "Cores".</summary>
-    public int CorId { get; private set; }
+    public int CorId { get; private set; } = CorDourada;
     public Color CorAtual => Cores[CorId];
     public float Vida { get; private set; } = VidaMaxima;
+    float NivelSolar => Mathf.Min(Vida, GameManager.Instancia != null ? GameManager.Instancia.Estabilidade : 100f);
     public Color CorVisualAtual
     {
         get
         {
-            GameManager jogo = GameManager.Instancia;
-            float estabilidade = jogo != null ? jogo.Estabilidade : 100f;
-            float perigo = Mathf.Min(Vida, estabilidade);
+            float perigo = NivelSolar;
             float faseDano = Mathf.InverseLerp(100f, 0f, perigo);
-            Color cor = Color.Lerp(CorAtual, new Color(1f, 0.025f, 0.035f), faseDano * 0.72f);
+            Color corBase = CorId == CorDourada ? TomSolarDourado : CorAtual;
+            Color cor = Color.Lerp(corBase, new Color(1f, 0.025f, 0.035f), faseDano * 0.72f);
             if (perigo <= 30f)
                 cor *= 0.86f + 0.14f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 8f));
             return cor;
@@ -73,12 +76,12 @@ public class PlayerController : MonoBehaviour
     /// <summary>Tempo total no ar em um pulo.</summary>
     public float TempoNoAr => 2f * forcaPulo / gravidade;
 
-    float AlturaCorpo => Deslizando ? 0.5f : 1f;
+    float AlturaCorpo => ProporcaoAbaixado;
 
     /// <summary>Caixa lógica do personagem, independente do tamanho do modelo visual.</summary>
     public Bounds Limites => new Bounds(
         new Vector3(transform.position.x, altura + AlturaCorpo / 2f, transform.position.z),
-        new Vector3(0.8f, AlturaCorpo * 0.9f, 0.8f));
+        new Vector3(0.8f * ProporcaoAbaixado, AlturaCorpo * 0.9f, 0.8f * ProporcaoAbaixado));
 
     float altura;          // altura lógica do personagem em relação à pista
     float velocidadeY;
@@ -193,7 +196,7 @@ public class PlayerController : MonoBehaviour
             if (!preparandoPulo)
             {
                 preparandoPulo = true;
-                preparacaoPulo = 0.075f;
+                preparacaoPulo = TempoPreparoPulo;
             }
             preparacaoPulo -= Time.deltaTime;
             if (preparacaoPulo <= 0f)
@@ -431,7 +434,7 @@ public class PlayerController : MonoBehaviour
     {
         if (blocoDePropriedades == null) blocoDePropriedades = new MaterialPropertyBlock();
         Color corVisual = CorVisualAtual;
-        Color brilho = corVisual;
+        float plasma = CorId == CorDourada ? Mathf.InverseLerp(30f, 90f, NivelSolar) : 0f;
         for (int i = 0; i < visuais.Length; i++)
         {
             Renderer r = visuais[i];
@@ -447,7 +450,9 @@ public class PlayerController : MonoBehaviour
                     blocoDePropriedades.SetFloat("_TintInfluence", 0.92f);
                 }
                 if (mats[j].HasProperty("_GlowColor"))
-                    blocoDePropriedades.SetColor("_GlowColor", brilho * 1.35f);
+                    blocoDePropriedades.SetColor("_GlowColor", corVisual * 1.35f);
+                if (mats[j].HasProperty("_PlasmaDourado"))
+                    blocoDePropriedades.SetFloat("_PlasmaDourado", plasma);
                 r.SetPropertyBlock(blocoDePropriedades, j);
             }
         }

@@ -6,6 +6,10 @@ Shader "Sol3D/Labaredas"
         _LateralSide ("Lado permitido (zero desativa)", Float) = 0
         _SourceCenter ("Centro do Sol", Vector) = (0,0,0,0)
         _CutDistance ("Limite lateral", Float) = 0
+        _RearOnly ("Somente atras", Float) = 0
+        _RearClipDistance ("Limite traseiro", Float) = 0
+        _SolarMaskRadii ("Raios de protecao do Sol", Vector) = (0,0,0,0)
+        _RastroContinuo ("Rastro continuo", Float) = 0
     }
     SubShader
     {
@@ -24,6 +28,10 @@ Shader "Sol3D/Labaredas"
             float4 _SourceCenter;
             float _LateralSide;
             float _CutDistance;
+            float _RearOnly;
+            float _RearClipDistance;
+            float4 _SolarMaskRadii;
+            float _RastroContinuo;
             CBUFFER_END
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float3 positionWS : TEXCOORD1; };
@@ -40,24 +48,39 @@ Shader "Sol3D/Labaredas"
             {
                 if (abs(_LateralSide) > 0.5)
                     clip((input.positionWS.x - _SourceCenter.x) * _LateralSide - _CutDistance);
-                float2 p = input.uv * 2.0 - 1.0;
+                if (_RearOnly > 0.5)
+                    clip(_SourceCenter.z - input.positionWS.z - _RearClipDistance);
+                // Recorta a silhueta da fotosfera, inclusive quando ela se achata.
+                // Evita que os billboards transparentes se sobreponham ao corpo.
+                if (min(_SolarMaskRadii.x, min(_SolarMaskRadii.y, _SolarMaskRadii.z)) > 0.001)
+                {
+                    float3 camera = GetCameraPositionWS();
+                    float3 raio = normalize(input.positionWS - camera) / _SolarMaskRadii.xyz;
+                    float3 origem = (camera - _SourceCenter.xyz) / _SolarMaskRadii.xyz;
+                    float t = -dot(origem, raio) / max(dot(raio, raio), 0.0001);
+                    if (t > 0) clip(length(origem + raio * t) - 1.0);
+                }
+                // A linha tem o comprimento no eixo U e sua malha já afina ao longo do percurso.
+                bool linha = _RastroContinuo > 0.5;
+                float2 p = (linha ? input.uv.yx : input.uv) * 2.0 - 1.0;
                 float tempo = _Time.y;
                 // Volta ao rastro macio e contínuo: núcleo quente e bordas difusas.
                 float comprimento = saturate((p.y + 1.0) * 0.5);
                 float ondulacao = 0.075 * sin(p.y * 7.0 - tempo * 6.5)
                     + 0.028 * sin(p.y * 15.0 + tempo * 8.0);
                 float eixo = p.x - ondulacao;
-                float largura = 0.12 + 0.68 * pow(1.0 - comprimento, 0.82);
-                float contorno = exp(-pow(abs(eixo) / max(largura, 0.001), 2.2) * 2.2);
-                float ponta = 1.0 - smoothstep(0.76, 1.0, comprimento);
-                float origem = smoothstep(0.0, 0.10, comprimento);
+                float largura = linha ? 0.94 : 0.12 + 0.68 * pow(1.0 - comprimento, 0.82);
+                float contorno = exp(-pow(abs(eixo) / largura, 2.2) * 2.2);
+                float ponta = 1.0 - smoothstep(linha ? 0.90 : 0.76, 1.0, comprimento);
+                float origem = linha ? 1.0 : smoothstep(0.0, 0.10, comprimento);
                 float plume = contorno * ponta * origem;
 
                 // Filetes sutis dão textura de plasma sem quebrar a silhueta macia.
                 float fluxo = 0.5 + 0.5 * sin(p.y * 18.0 - tempo * 10.0
                     + sin(p.x * 13.0 + tempo * 2.0) * 0.45);
                 float filetes = smoothstep(0.72, 0.98, fluxo) * plume;
-                float nucleo = exp(-pow(eixo / max(largura * 0.34, 0.001), 2.0) * 2.0) * ponta * origem;
+                float eixoNucleo = eixo / (largura * 0.34);
+                float nucleo = exp(-eixoNucleo * eixoNucleo * 2.0) * ponta * origem;
                 float alpha = saturate(plume * 0.82 + filetes * 0.18) * input.color.a;
 
                 // A cor principal vem diretamente do Sol (vermelho, verde, azul, etc.).
@@ -71,3 +94,4 @@ Shader "Sol3D/Labaredas"
         }
     }
 }
+

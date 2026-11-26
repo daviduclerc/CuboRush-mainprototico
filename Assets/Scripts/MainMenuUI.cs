@@ -1,0 +1,601 @@
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
+using UnityEngine.UI;
+
+/// <summary>Menu inicial, opcoes e creditos com controles reais sobre a arte.</summary>
+[DefaultExecutionOrder(200)]
+public sealed class MainMenuUI : MonoBehaviour
+{
+    const float Ruptura = 1.36f;
+    const float TrocaDeCena = 1.84f;
+    const float ChegadaNaPista = 4.24f;
+    const float FimDaIntroducao = 4.82f;
+
+    GameManager jogo;
+    Canvas canvas;
+    RectTransform raiz, segura, quadro, arte, principal, modal, cartao;
+    Text rodape, versao, tituloModal, volumeTexto, conteudo;
+    Button[] botoes = new Button[4];
+    Button voltar;
+    Slider volume;
+    Toggle telaCheia;
+    Font fonte;
+    bool visivelAnterior;
+    bool retrato;
+    string pagina = "";
+    static readonly Color Ciano = new Color(0.25f, 0.9f, 1f);
+    static readonly Color Ambar = new Color(1f, 0.65f, 0.15f);
+    Image fundo;
+    RawImage imagemFundo, sol, claridade;
+    CanvasGroup grupoPrincipal;
+    Material materialDisco, materialSol, materialClarao, materialRastro;
+    bool emIntroducao;
+    float inicioDaIntroducao;
+    CameraFollow cameraDaPista;
+    GameplayHud hud;
+    Transform solNaPista;
+    Vector3 posicaoSolarOriginal;
+    Quaternion rotacaoSolarOriginal;
+    Renderer[] visuaisNaPista;
+    bool[] visibilidadeAnterior;
+    LineRenderer rastro;
+    static readonly Vector2 CentroBuracoNegro = new Vector2(0.69f, 0.494f);
+    static readonly Vector2 SaidaDoSol = new Vector2(0.734f, 0.654f);
+
+    void Start()
+    {
+        jogo = GetComponent<GameManager>();
+        hud = GetComponent<GameplayHud>();
+        fonte = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        GarantirEntradaUI();
+        raiz = Rect("Menu inicial Supernova", transform);
+        canvas = raiz.gameObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 100;
+        raiz.gameObject.AddComponent<GraphicRaycaster>();
+        var scaler = raiz.gameObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1280, 720);
+        scaler.matchWidthOrHeight = 0.5f;
+        fundo = raiz.gameObject.AddComponent<Image>();
+        fundo.color = new Color(0.003f, 0.005f, 0.015f, 1f);
+        segura = Rect("Area segura do menu", raiz);
+        quadro = Rect("Composicao responsiva", segura);
+        quadro.anchorMin = quadro.anchorMax = quadro.pivot = new Vector2(0.5f, 0.5f);
+        arte = Rect("Arte de abertura", quadro);
+        imagemFundo = arte.gameObject.AddComponent<RawImage>();
+        imagemFundo.texture = Resources.Load<Texture2D>("Menu/EclipseBackground");
+        imagemFundo.raycastTarget = false;
+        Shader shaderDisco = Resources.Load<Shader>("Menu/MenuEclipseDisk");
+        if (shaderDisco != null && shaderDisco.isSupported)
+        {
+            materialDisco = new Material(shaderDisco);
+            imagemFundo.material = materialDisco;
+        }
+        CriarSol();
+        principal = Rect("Botoes principais", quadro);
+        Stretch(principal);
+        grupoPrincipal = principal.gameObject.AddComponent<CanvasGroup>();
+        string[] nomes = { "JOGAR", "OPÇÕES", "CRÉDITOS", "SAIR" };
+        for (int i = 0; i < nomes.Length; i++)
+        {
+            bool botaoJogar = i == 0;
+            botoes[i] = Botao(nomes[i], principal, botaoJogar ? Ambar : Ciano);
+            var molduraBotao = botoes[i].GetComponent<NeonMenuGraphic>();
+            molduraBotao.Configurar(botaoJogar
+                ? new Color(0.40f, 0.14f, 0.025f, 0.98f)
+                : new Color(0.013f, 0.043f, 0.055f, 0.94f), 2.2f, 0.46f);
+            var rotulo = botoes[i].GetComponentInChildren<Text>();
+            rotulo.fontSize = botaoJogar ? 40 : 29;
+            rotulo.fontStyle = FontStyle.BoldAndItalic;
+        }
+        botoes[0].onClick.AddListener(Jogar);
+        botoes[1].onClick.AddListener(AbrirOpcoes);
+        botoes[2].onClick.AddListener(AbrirCreditos);
+        botoes[3].onClick.AddListener(Sair);
+        for (int i = 0; i < botoes.Length; i++)
+        {
+            Navigation nav = new Navigation { mode = Navigation.Mode.Explicit,
+                selectOnUp = botoes[(i + 3) % 4], selectOnDown = botoes[(i + 1) % 4] };
+            botoes[i].navigation = nav;
+        }
+        rodape = Texto("", principal, 13, Color.white);
+        versao = Texto("VERSÃO " + Application.version, principal, 11, new Color(0.6f, 0.78f, 0.9f));
+        modal = Rect("Janela de opcoes e creditos", quadro);
+        Stretch(modal);
+        Image sombra = modal.gameObject.AddComponent<Image>();
+        sombra.color = new Color(0.003f, 0.007f, 0.02f, 0.92f);
+        cartao = Rect("Painel holografico", modal);
+        cartao.anchorMin = cartao.anchorMax = cartao.pivot = new Vector2(0.5f, 0.5f);
+        var moldura = cartao.gameObject.AddComponent<NeonMenuGraphic>();
+        moldura.color = Ciano;
+        tituloModal = Texto("", cartao, 30, Ciano);
+        volumeTexto = Texto("", cartao, 19, Color.white);
+        volume = CriarSlider(cartao);
+        volume.SetValueWithoutNotify(Mathf.Clamp01(PlayerPrefs.GetFloat("VolumeEfeitos", 1f)));
+        AudioListener.volume = volume.value;
+        volume.onValueChanged.AddListener(AplicarVolume);
+        volumeTexto.text = "VOLUME DOS EFEITOS  " + Mathf.RoundToInt(volume.value * 100) + "%";
+        telaCheia = CriarToggle(cartao);
+        bool fullscreen = PlayerPrefs.GetInt("TelaCheia", Screen.fullScreen ? 1 : 0) == 1;
+        telaCheia.SetIsOnWithoutNotify(fullscreen);
+        if (!Application.isEditor && PlayerPrefs.HasKey("TelaCheia")) Screen.fullScreen = fullscreen;
+        telaCheia.onValueChanged.AddListener(valor => {
+            PlayerPrefs.SetInt("TelaCheia", valor ? 1 : 0);
+            if (!Application.isEditor) Screen.fullScreen = valor;
+        });
+        conteudo = Texto("", cartao, 18, new Color(0.86f, 0.92f, 1f));
+        conteudo.alignment = TextAnchor.UpperLeft;
+        conteudo.horizontalOverflow = HorizontalWrapMode.Wrap;
+        voltar = Botao("VOLTAR", cartao, Ciano);
+        voltar.onClick.AddListener(FecharJanela);
+        modal.gameObject.SetActive(false);
+        CriarClarao();
+        AtualizarLayout();
+        AtualizarVisibilidade();
+    }
+
+    void CriarSol()
+    {
+        Shader shader = Resources.Load<Shader>("Menu/MenuEclipseSun");
+        Texture2D fotosfera = Resources.Load<Texture2D>("Sol3D/Fotosfera");
+        if (shader == null || !shader.isSupported || fotosfera == null) return;
+
+        RectTransform figura = Rect("Sol emergindo do buraco negro", quadro);
+        figura.anchorMin = figura.anchorMax = figura.pivot = new Vector2(0.5f, 0.5f);
+        sol = figura.gameObject.AddComponent<RawImage>();
+        sol.raycastTarget = false;
+        sol.texture = fotosfera;
+        sol.color = Color.clear;
+        materialSol = new Material(shader);
+        sol.material = materialSol;
+    }
+
+    void CriarClarao()
+    {
+        Shader shader = Resources.Load<Shader>("Menu/MenuIntroBurst");
+        RectTransform camada = Rect("Clarão da supernova", raiz);
+        Stretch(camada);
+        claridade = camada.gameObject.AddComponent<RawImage>();
+        claridade.raycastTarget = false;
+        claridade.texture = Texture2D.whiteTexture;
+        claridade.color = Color.clear;
+        if (shader == null || !shader.isSupported) return;
+        materialClarao = new Material(shader);
+        claridade.material = materialClarao;
+    }
+
+    void PrepararSolDaPista()
+    {
+        var camera = Camera.main;
+        cameraDaPista = camera != null ? camera.GetComponent<CameraFollow>() : null;
+        var jogador = Object.FindAnyObjectByType<PlayerController>();
+        solNaPista = jogador != null ? jogador.VisualSolar : null;
+        if (solNaPista == null) return;
+        posicaoSolarOriginal = solNaPista.localPosition;
+        rotacaoSolarOriginal = solNaPista.localRotation;
+        visuaisNaPista = solNaPista.GetComponentsInChildren<Renderer>(true);
+        visibilidadeAnterior = new bool[visuaisNaPista.Length];
+        for (int i = 0; i < visuaisNaPista.Length; i++)
+        {
+            visibilidadeAnterior[i] = visuaisNaPista[i].forceRenderingOff;
+            visuaisNaPista[i].forceRenderingOff = true;
+        }
+        if (rastro == null) CriarRastro();
+        if (materialRastro != null) materialRastro.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+    }
+
+    void RestaurarSolDaPista()
+    {
+        if (visuaisNaPista == null) return;
+        for (int i = 0; i < visuaisNaPista.Length; i++)
+            if (visuaisNaPista[i] != null)
+                visuaisNaPista[i].forceRenderingOff = visibilidadeAnterior[i];
+        visuaisNaPista = null;
+        visibilidadeAnterior = null;
+    }
+
+    void CriarRastro()
+    {
+        Shader shader = Resources.Load<Shader>("Sol3D/Labaredas");
+        if (shader == null || !shader.isSupported) return;
+        var objeto = new GameObject("Rastro de plasma da abertura");
+        objeto.transform.SetParent(transform, false);
+        rastro = objeto.AddComponent<LineRenderer>();
+        materialRastro = new Material(shader);
+        materialRastro.SetFloat("_RastroContinuo", 1f);
+        rastro.sharedMaterial = materialRastro;
+        rastro.textureMode = LineTextureMode.Stretch;
+        rastro.positionCount = 22;
+        rastro.startWidth = 0.56f;
+        rastro.endWidth = 0.035f;
+        rastro.startColor = new Color(1f, 1f, 1f, 0.72f);
+        rastro.endColor = new Color(1f, 1f, 1f, 0f);
+        rastro.enabled = false;
+    }
+
+    void AtualizarIntroducao(float tempo)
+    {
+        grupoPrincipal.alpha = 1f - Suave(0f, 0.26f, tempo);
+        bool mostrarPista = tempo >= TrocaDeCena;
+        fundo.color = new Color(0.003f, 0.005f, 0.015f, mostrarPista ? 0f : 1f);
+        imagemFundo.gameObject.SetActive(!mostrarPista);
+        if (sol != null) sol.gameObject.SetActive(!mostrarPista);
+        if (tempo < 2.46f) AnimarSaidaDoBuracoNegro(tempo);
+        else claridade.color = Color.clear;
+        if (mostrarPista) AnimarDescidaNaPista(tempo);
+        if (hud != null) hud.Apresentar(Suave(ChegadaNaPista - 0.1f, FimDaIntroducao, tempo));
+        if (tempo < FimDaIntroducao) return;
+
+        jogo.IniciarPartida();
+        EncerrarIntroducao();
+        AtualizarVisibilidade();
+    }
+
+    void AnimarSaidaDoBuracoNegro(float tempo)
+    {
+        Vector2 tamanho = arte.rect.size;
+        float avanco = Suave(0.16f, TrocaDeCena, tempo);
+        float zoom = Mathf.Lerp(1f, 1.85f, avanco);
+        arte.localScale = Vector3.one * zoom;
+        Vector2 foco = arte.rect.min + Vector2.Scale(tamanho, CentroBuracoNegro);
+        arte.anchoredPosition = -foco * (zoom - 1f) + Vector2.left * (tamanho.x * 0.175f * avanco);
+
+        float subida = Mathf.InverseLerp(0.60f, 1.76f, tempo);
+        subida *= subida;
+        Vector2 centroArte = Vector2.Lerp(new Vector2(0.665f, 0.41f), SaidaDoSol, subida);
+        Vector3 posicaoSol = arte.TransformPoint(arte.rect.min + Vector2.Scale(centroArte, tamanho));
+        if (materialDisco != null)
+            materialDisco.SetFloat("_Distorcao", Suave(0.60f, 1.68f, tempo));
+        AtualizarClarao(tempo, posicaoSol);
+        if (sol == null || tempo >= TrocaDeCena) return;
+
+        float ladoSemZoom = tamanho.y * Mathf.Lerp(0.09f, 0.255f, subida);
+        float lado = ladoSemZoom * zoom;
+        sol.rectTransform.anchoredPosition = quadro.InverseTransformPoint(posicaoSol);
+        sol.rectTransform.sizeDelta = Vector2.one * lado;
+        sol.color = new Color(1f, 1f, 1f, Suave(0.65f, 0.94f, tempo));
+        materialSol.SetVector("_Center", new Vector4(centroArte.x, centroArte.y, 0f, 0f));
+        materialSol.SetVector("_Size", new Vector4(ladoSemZoom / Mathf.Max(1f, tamanho.x),
+            ladoSemZoom / Mathf.Max(1f, tamanho.y), 0f, 0f));
+        materialSol.SetFloat("_Clock", tempo);
+        materialSol.SetFloat("_Occlusion", 1f - Suave(Ruptura, 1.70f, tempo));
+    }
+
+    void AtualizarClarao(float tempo, Vector3 origem)
+    {
+        float intensidade = Suave(1.54f, 1.80f, tempo) * (1f - Suave(1.88f, 2.33f, tempo));
+        if (materialClarao == null)
+        {
+            claridade.color = new Color(1f, 0.97f, 0.9f, intensidade);
+            return;
+        }
+
+        Vector2 tamanho = raiz.rect.size;
+        Vector2 ponto = (Vector2)raiz.InverseTransformPoint(origem) - raiz.rect.min;
+        materialClarao.SetVector("_Origem", new Vector4(ponto.x / Mathf.Max(1f, tamanho.x),
+            ponto.y / Mathf.Max(1f, tamanho.y), Mathf.Max(1f, tamanho.x) / Mathf.Max(1f, tamanho.y), 0f));
+        materialClarao.SetFloat("_Frente", Mathf.InverseLerp(Ruptura, 2.37f, tempo));
+        materialClarao.SetFloat("_Clarao", intensidade);
+        claridade.color = new Color(1f, 1f, 1f, Suave(Ruptura, 1.52f, tempo) * (1f - Suave(2.24f, 2.46f, tempo)));
+    }
+
+    void AnimarDescidaNaPista(float tempo)
+    {
+        if (cameraDaPista != null) cameraDaPista.EnquadrarAbertura(Suave(TrocaDeCena, ChegadaNaPista + 0.18f, tempo));
+        if (solNaPista == null) return;
+        RestaurarSolDaPista();
+        float progresso = Mathf.InverseLerp(TrocaDeCena, ChegadaNaPista, tempo);
+        solNaPista.position = PosicaoDaDescida(progresso);
+        solNaPista.localRotation = rotacaoSolarOriginal *
+            Quaternion.Euler(Mathf.Sin(progresso * Mathf.PI) * 18f, (1f - progresso) * -155f, 0f);
+
+        if (rastro == null) return;
+        float fimDoRastro = 1f - Suave(0.80f, 1f, progresso);
+        rastro.enabled = fimDoRastro > 0f && progresso > 0f;
+        if (!rastro.enabled) return;
+        rastro.widthMultiplier = fimDoRastro;
+        for (int i = 0; i < rastro.positionCount; i++)
+        {
+            float atraso = Mathf.Lerp(0.008f, 0.25f, (float)i / (rastro.positionCount - 1));
+            rastro.SetPosition(i, PosicaoDaDescida(Mathf.Max(0f, progresso - atraso)));
+        }
+    }
+
+    Vector3 PosicaoDaDescida(float progresso)
+    {
+        Vector3 pista = solNaPista.parent.TransformPoint(posicaoSolarOriginal);
+        float t = Mathf.SmoothStep(0f, 1f, progresso);
+        float u = 1f - t;
+        return pista + new Vector3(5.1f, 13f, 18f) * (u * u * u)
+            + new Vector3(3.5f, 7f, 11f) * (3f * u * u * t)
+            + new Vector3(0f, 0.45f, 3.6f) * (3f * u * t * t);
+    }
+
+    void EncerrarIntroducao()
+    {
+        emIntroducao = false;
+        RestaurarSolDaPista();
+        if (solNaPista != null)
+        {
+            solNaPista.localPosition = posicaoSolarOriginal;
+            solNaPista.localRotation = rotacaoSolarOriginal;
+        }
+        if (cameraDaPista != null) cameraDaPista.EnquadrarAbertura(1f);
+        solNaPista = null;
+        cameraDaPista = null;
+        if (hud != null) hud.Apresentar(0f);
+        if (rastro != null) rastro.enabled = false;
+        if (claridade != null) claridade.color = Color.clear;
+        if (materialDisco != null) materialDisco.SetFloat("_Distorcao", 0f);
+        if (arte != null) arte.localScale = Vector3.one;
+    }
+
+    static float Suave(float inicio, float fim, float tempo) =>
+        Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(inicio, fim, tempo));
+
+    void GarantirEntradaUI()
+    {
+        var eventos = Object.FindAnyObjectByType<EventSystem>();
+        if (eventos == null)
+        {
+            var obj = new GameObject("Entrada dos menus", typeof(EventSystem));
+            obj.transform.SetParent(transform, false);
+            eventos = obj.GetComponent<EventSystem>();
+        }
+        var antigo = eventos.GetComponent<StandaloneInputModule>();
+        if (antigo != null) antigo.enabled = false;
+        var modulo = eventos.GetComponent<InputSystemUIInputModule>();
+        if (modulo == null) modulo = eventos.gameObject.AddComponent<InputSystemUIInputModule>();
+        modulo.AssignDefaultActions();
+    }
+
+    void Update()
+    {
+        if (jogo == null || jogo.Estado != EstadoJogo.Menu || emIntroducao) return;
+        var teclado = Keyboard.current;
+        if (teclado == null) return;
+        if (teclado.escapeKey.wasPressedThisFrame && pagina != "") FecharJanela();
+        else if (pagina == "" && teclado.spaceKey.wasPressedThisFrame &&
+            (EventSystem.current == null || EventSystem.current.currentSelectedGameObject == null ||
+             EventSystem.current.currentSelectedGameObject == botoes[0].gameObject)) Jogar();
+    }
+
+    void LateUpdate()
+    {
+        if (raiz == null) return;
+        AtualizarVisibilidade();
+        if (!raiz.gameObject.activeSelf) return;
+        AtualizarLayout();
+        if (materialDisco != null) materialDisco.SetFloat("_Clock", Time.unscaledTime);
+        if (emIntroducao) AtualizarIntroducao(Time.unscaledTime - inicioDaIntroducao);
+    }
+
+    void AtualizarVisibilidade()
+    {
+        bool visivel = jogo != null && jogo.Estado == EstadoJogo.Menu;
+        raiz.gameObject.SetActive(visivel);
+        if (visivel && !visivelAnterior)
+        {
+            fundo.color = new Color(0.003f, 0.005f, 0.015f, 1f);
+            imagemFundo.gameObject.SetActive(true);
+            imagemFundo.color = Color.white;
+            if (sol != null)
+            {
+                sol.gameObject.SetActive(true);
+                sol.color = Color.clear;
+            }
+            grupoPrincipal.alpha = 1f;
+            grupoPrincipal.interactable = grupoPrincipal.blocksRaycasts = true;
+            pagina = "";
+            principal.gameObject.SetActive(true);
+            modal.gameObject.SetActive(false);
+            rodape.text = "RECORDE  " + jogo.Recorde + "     •     MOEDAS  " + jogo.MoedasTotal;
+            botoes[0].Select();
+        }
+        if (!visivel && emIntroducao) EncerrarIntroducao();
+        visivelAnterior = visivel;
+    }
+
+    void AtualizarLayout()
+    {
+        float w = Mathf.Max(1, Screen.width), h = Mathf.Max(1, Screen.height);
+        UnityEngine.Rect safe = Screen.safeArea;
+        if (safe.width <= 0 || safe.height <= 0) safe = new UnityEngine.Rect(0, 0, w, h);
+        segura.anchorMin = new Vector2(Mathf.Clamp01(safe.xMin / w), Mathf.Clamp01(safe.yMin / h));
+        segura.anchorMax = new Vector2(Mathf.Clamp01(safe.xMax / w), Mathf.Clamp01(safe.yMax / h));
+        segura.offsetMin = segura.offsetMax = Vector2.zero;
+
+        float aw = Mathf.Max(1f, segura.rect.width), ah = Mathf.Max(1f, segura.rect.height);
+        retrato = aw / Mathf.Max(1, ah) < 1.1f;
+        Vector2 design = retrato ? new Vector2(720, 1024) : new Vector2(1280, 720);
+        quadro.sizeDelta = design;
+        quadro.localScale = Vector3.one * Mathf.Max(0.001f, Mathf.Min(aw / design.x, ah / design.y));
+        Pos(arte, new Vector2(0.5f, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(design.x, design.x * 9f / 16));
+        if (retrato)
+        {
+            for (int i = 0; i < botoes.Length; i++)
+                Pos((RectTransform)botoes[i].transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
+                    new Vector2(0f, -467f - i * 110f), new Vector2(i == 0 ? 420f : 390f, i == 0 ? 82f : 66f));
+
+            Pos(rodape.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 105f), new Vector2(650f, 24f));
+            Pos(versao.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 77f), new Vector2(600f, 18f));
+        }
+        else
+        {
+            Pos((RectTransform)botoes[0].transform, new Vector2(0.18f, 0.578f), new Vector2(0.5f, 0.5f),
+                Vector2.zero, new Vector2(345f, 73f));
+            for (int i = 1; i < botoes.Length; i++)
+                Pos((RectTransform)botoes[i].transform, new Vector2(0.177f, 0.444f - (i - 1) * 0.110f),
+                    new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(306f, 55f));
+
+            Pos(rodape.rectTransform, new Vector2(0.177f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 57f), new Vector2(340f, 22f));
+            Pos(versao.rectTransform, new Vector2(0.177f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, 33f), new Vector2(300f, 18f));
+        }
+        cartao.sizeDelta = new Vector2(600, retrato ? 650 : 570);
+        Top(tituloModal.rectTransform, 18, 44, 540);
+        Top(volumeTexto.rectTransform, 85, 28, 500);
+        Top((RectTransform)volume.transform, 124, 28, 440);
+        Top((RectTransform)telaCheia.transform, 174, 36, 500);
+        Top(conteudo.rectTransform, pagina == "creditos" ? 100 : 235, pagina == "creditos" ? 340 : (retrato ? 285 : 250), 500);
+        Pos((RectTransform)voltar.transform, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 25), new Vector2(240, 42));
+    }
+
+    public void Jogar()
+    {
+        if (jogo == null || jogo.Estado != EstadoJogo.Menu || emIntroducao || pagina != "") return;
+        PlayerPrefs.Save();
+        emIntroducao = true;
+        inicioDaIntroducao = Time.unscaledTime;
+        grupoPrincipal.interactable = grupoPrincipal.blocksRaycasts = false;
+        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        PrepararSolDaPista();
+    }
+
+    public void AbrirOpcoes()
+    {
+        Abrir("opcoes", "OPÇÕES");
+        volume.gameObject.SetActive(true);
+        volumeTexto.gameObject.SetActive(true);
+        telaCheia.gameObject.SetActive(true);
+        conteudo.text = (Application.isEditor ? "Tela cheia funciona no jogo exportado.\n\n" : "") +
+            "CONTROLES\nA / D ou setas: mover\nW ou Espaço: pular\nS ou seta para baixo: agachar\nE / Q: mudar a cor do Sol\nEsc / P: pausar\n\nColete moedas da sua cor para recuperar estabilidade.";
+        AtualizarLayout();
+        volume.Select();
+    }
+
+    public void AbrirCreditos()
+    {
+        Abrir("creditos", "CRÉDITOS");
+        volume.gameObject.SetActive(false);
+        volumeTexto.gameObject.SetActive(false);
+        telaCheia.gameObject.SetActive(false);
+        conteudo.text = "IMMINENCE OF A SUPERNOVA\n\nDesenvolvimento: criador do projeto.\n\nMotor do jogo: Unity.\nArte do menu: referência do projeto.\n\nObrigado por jogar!";
+        AtualizarLayout();
+        voltar.Select();
+    }
+
+    void Abrir(string qual, string titulo)
+    {
+        pagina = qual;
+        principal.gameObject.SetActive(false);
+        modal.gameObject.SetActive(true);
+        tituloModal.text = titulo;
+    }
+
+    public void FecharJanela()
+    {
+        PlayerPrefs.Save();
+        pagina = "";
+        principal.gameObject.SetActive(true);
+        modal.gameObject.SetActive(false);
+        botoes[0].Select();
+    }
+
+    void AplicarVolume(float valor)
+    {
+        AudioListener.volume = Mathf.Clamp01(valor);
+        PlayerPrefs.SetFloat("VolumeEfeitos", AudioListener.volume);
+        volumeTexto.text = "VOLUME DOS EFEITOS  " + Mathf.RoundToInt(valor * 100) + "%";
+    }
+
+    void Sair()
+    {
+        PlayerPrefs.Save();
+        #if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+        #else
+        Application.Quit();
+        #endif
+    }
+
+    Button Botao(string nome, Transform pai, Color cor)
+    {
+        var rect = Rect(nome, pai);
+        var graphic = rect.gameObject.AddComponent<NeonMenuGraphic>();
+        graphic.color = Color.white;
+        var b = rect.gameObject.AddComponent<Button>();
+        b.targetGraphic = graphic;
+        b.colors = new ColorBlock { normalColor = cor * 0.85f, highlightedColor = Color.Lerp(cor, Color.white, 0.45f),
+            pressedColor = Color.white, selectedColor = cor, disabledColor = Color.gray, colorMultiplier = 1f, fadeDuration = 0.12f };
+        Text label = Texto(nome, rect, 23, Color.white);
+        Stretch(label.rectTransform);
+        return b;
+    }
+
+    Slider CriarSlider(Transform pai)
+    {
+        var rect = Rect("Volume", pai);
+        var slider = rect.gameObject.AddComponent<Slider>();
+        Image bg = Image("Trilho", rect, new Color(0.04f, 0.09f, 0.15f));
+        Stretch(bg.rectTransform);
+        var area = Rect("Area do preenchimento", rect); Stretch(area); area.offsetMin = new Vector2(8, 7); area.offsetMax = new Vector2(-8, -7);
+        Image fill = Image("Volume preenchido", area, Ciano); Stretch(fill.rectTransform); slider.fillRect = fill.rectTransform;
+        var handleArea = Rect("Area do controle", rect); Stretch(handleArea); handleArea.offsetMin = new Vector2(8, 0); handleArea.offsetMax = new Vector2(-8, 0);
+        Image handle = Image("Controle do volume", handleArea, Color.white); handle.rectTransform.sizeDelta = new Vector2(16, 28);
+        slider.handleRect = handle.rectTransform; slider.targetGraphic = handle;
+        slider.minValue = 0; slider.maxValue = 1; slider.direction = Slider.Direction.LeftToRight;
+        return slider;
+    }
+
+    Toggle CriarToggle(Transform pai)
+    {
+        var rect = Rect("Tela cheia", pai);
+        var t = rect.gameObject.AddComponent<Toggle>();
+        Image box = Image("Caixa", rect, new Color(0.10f, 0.19f, 0.28f));
+        Pos(box.rectTransform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), Vector2.zero, new Vector2(30, 30));
+        Image check = Image("Ativado", box.transform, Ciano); Stretch(check.rectTransform); check.rectTransform.offsetMin = new Vector2(5, 5); check.rectTransform.offsetMax = new Vector2(-5, -5);
+        t.targetGraphic = box; t.graphic = check;
+        Text label = Texto("TELA CHEIA", rect, 19, Color.white);
+        Stretch(label.rectTransform); label.rectTransform.offsetMin = new Vector2(44, 0); label.alignment = TextAnchor.MiddleLeft;
+        return t;
+    }
+
+    Text Texto(string valor, Transform pai, int tamanho, Color cor)
+    {
+        var text = Rect(valor, pai).gameObject.AddComponent<Text>();
+        text.font = fonte; text.fontStyle = FontStyle.Bold; text.fontSize = tamanho;
+        text.text = valor; text.color = cor; text.alignment = TextAnchor.MiddleCenter;
+        text.horizontalOverflow = HorizontalWrapMode.Wrap; text.verticalOverflow = VerticalWrapMode.Truncate;
+        text.raycastTarget = false;
+        var shadow = text.gameObject.AddComponent<Shadow>(); shadow.effectColor = new Color(0, 0, 0, 0.95f); shadow.effectDistance = new Vector2(1.5f, -1.5f);
+        return text;
+    }
+
+    static Image Image(string nome, Transform pai, Color cor)
+    {
+        var image = Rect(nome, pai).gameObject.AddComponent<Image>(); image.color = cor; return image;
+    }
+    static RectTransform Rect(string nome, Transform pai)
+    {
+        var r = new GameObject(nome, typeof(RectTransform)).GetComponent<RectTransform>(); r.SetParent(pai, false); return r;
+    }
+    static void Stretch(RectTransform r) { r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one; r.offsetMin = r.offsetMax = Vector2.zero; }
+    static void Pos(RectTransform r, Vector2 anchor, Vector2 pivot, Vector2 p, Vector2 size) { r.anchorMin = r.anchorMax = anchor; r.pivot = pivot; r.anchoredPosition = p; r.sizeDelta = size; }
+    static void Top(RectTransform r, float y, float h, float w) { Pos(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -y), new Vector2(w, h)); }
+    void OnDisable()
+    {
+        if (emIntroducao) EncerrarIntroducao();
+        visivelAnterior = false;
+        if (raiz != null) raiz.gameObject.SetActive(false);
+    }
+    void OnDestroy()
+    {
+        if (raiz != null) Destroy(raiz.gameObject);
+        if (materialDisco != null) Destroy(materialDisco);
+        if (materialSol != null) Destroy(materialSol);
+        if (materialClarao != null) Destroy(materialClarao);
+        if (materialRastro != null) Destroy(materialRastro);
+        if (rastro != null) Destroy(rastro.gameObject);
+    }
+}
+
+
+
+

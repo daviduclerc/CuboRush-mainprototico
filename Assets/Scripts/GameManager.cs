@@ -54,18 +54,26 @@ public class GameManager : MonoBehaviour
     int Multiplicador => TempoDobro > 0f ? 2 : 1;
 
     static bool pularMenu;
+    bool carregandoCena;
     bool novoRecorde;
     float momentoFim;
     float tempoImpulsoTermico;
+    const float GanhoMaximoPulso = 0.22f;
 
+    MainMenuUI menuInicial;
+    PauseMenuUI menuPausa;
     AudioSource audioFonte;
-    AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro;
+    AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro, somTravessia;
     GUIStyle estilo;
 
     void Awake()
     {
         Instancia = this;
         if (GetComponent<GameplayHud>() == null) gameObject.AddComponent<GameplayHud>();
+        menuInicial = GetComponent<MainMenuUI>();
+        if (menuInicial == null) menuInicial = gameObject.AddComponent<MainMenuUI>();
+        menuPausa = GetComponent<PauseMenuUI>();
+        if (menuPausa == null) menuPausa = gameObject.AddComponent<PauseMenuUI>();
         Time.timeScale = 1f;
         Velocidade = velocidadeInicial;
         Estabilidade = 100f;
@@ -88,25 +96,25 @@ public class GameManager : MonoBehaviour
         somEscudo = CriarTom("Escudo", 500f, 150f, 0.22f);
         somCor = CriarTom("Cor", 700f, 760f, 0.06f);
         somTiro = CriarTom("Tiro", 1200f, 250f, 0.2f);
+        somTravessia = CriarTom("Travessia limpa", 530f, 920f, 0.12f);
     }
 
     void Update()
     {
+        if (carregandoCena) return;
         switch (Estado)
         {
             case EstadoJogo.Menu:
-                if (Confirmou()) Estado = EstadoJogo.Jogando;
+                if ((menuInicial == null || !menuInicial.isActiveAndEnabled) && Confirmou()) IniciarPartida();
                 break;
 
             case EstadoJogo.Jogando:
                 TempoDeJogo += Time.deltaTime;
                 // Começa subindo devagar e acelera cada vez mais perto do final.
-                float velocidadeBase = velocidadeInicial
-                    + aceleracao * TempoDeJogo
-                    + aceleracaoFinal * TempoDeJogo * TempoDeJogo;
+                float velocidadeBase = VelocidadeNormal(TempoDeJogo);
                 tempoImpulsoTermico = Mathf.Max(0f, tempoImpulsoTermico - Time.deltaTime);
                 float pulso = Mathf.Clamp01(tempoImpulsoTermico / 0.55f);
-                float multiplicadorPulso = 1f + 0.22f * pulso;
+                float multiplicadorPulso = 1f + GanhoMaximoPulso * pulso;
                 Velocidade = Mathf.Min(velocidadeMaxima * multiplicadorPulso, velocidadeBase * multiplicadorPulso);
                 Pontos += Velocidade * Time.deltaTime * Multiplicador;
                 if (TempoIma > 0f) TempoIma -= Time.deltaTime;
@@ -122,30 +130,67 @@ public class GameManager : MonoBehaviour
                     break;
                 }
 
-                if (ApertouPausa())
-                {
-                    Estado = EstadoJogo.Pausado;
-                    Time.timeScale = 0f;
-                }
+                if (ApertouPausa()) Pausar();
                 break;
 
             case EstadoJogo.Pausado:
-                if (ApertouPausa() || Confirmou())
-                {
-                    Estado = EstadoJogo.Jogando;
-                    Time.timeScale = 1f;
-                }
+                if (ApertouPausa() || ((menuPausa == null || !menuPausa.isActiveAndEnabled) && Confirmou()))
+                    RetomarPartida();
                 break;
 
             case EstadoJogo.FimDeJogo:
                 // Pequena espera para não reiniciar sem querer.
                 if (Time.unscaledTime - momentoFim > 0.6f && Confirmou())
-                {
-                    pularMenu = true;
-                    SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-                }
+                    RecarregarCena(true);
                 break;
         }
+    }
+
+    float VelocidadeNormal(float tempo) =>
+        velocidadeInicial + aceleracao * tempo + aceleracaoFinal * tempo * tempo;
+
+    public float VelocidadePrevista(float distancia)
+    {
+        float tempoMaximo = Mathf.Max(0f, distancia) / Mathf.Max(1f, VelocidadeNormal(TempoDeJogo));
+        float normal = Mathf.Min(velocidadeMaxima, VelocidadeNormal(TempoDeJogo + tempoMaximo));
+        return Mathf.Max(Velocidade, normal * (1f + GanhoMaximoPulso));
+    }
+
+    public void IniciarPartida()
+    {
+        if (Estado != EstadoJogo.Menu) return;
+        Estado = EstadoJogo.Jogando;
+        Time.timeScale = 1f;
+    }
+
+    public void Pausar()
+    {
+        if (Estado != EstadoJogo.Jogando || carregandoCena) return;
+        Estado = EstadoJogo.Pausado;
+        Time.timeScale = 0f;
+    }
+
+    public void RetomarPartida()
+    {
+        if (Estado != EstadoJogo.Pausado || carregandoCena) return;
+        Estado = EstadoJogo.Jogando;
+        Time.timeScale = 1f;
+    }
+
+    public void VoltarAoMenu()
+    {
+        if (Estado == EstadoJogo.Pausado) RecarregarCena(false);
+    }
+
+    void RecarregarCena(bool jogarDireto)
+    {
+        if (carregandoCena) return;
+        int cena = Mathf.Max(0, SceneManager.GetActiveScene().buildIndex);
+        if (cena >= SceneManager.sceneCountInBuildSettings) return;
+        carregandoCena = true;
+        if (!jogarDireto) SalvarProgressoDaPartida();
+        pularMenu = jogarDireto;
+        SceneManager.LoadScene(cena);
     }
 
     // ---------- Entrada ----------
@@ -210,6 +255,8 @@ public class GameManager : MonoBehaviour
     public void SomDePulo() => Tocar(somPulo, 0.5f);
     public void SomDeCor() => Tocar(somCor, 0.4f);
     public void SomDeTiro() => Tocar(somTiro, 0.6f);
+    public void SomDeImpacto() => Tocar(somBatida, 0.55f);
+    public void SomDeTravessia() => Tocar(somTravessia, 0.32f);
     public void PulsoTermico() { tempoImpulsoTermico = 0.55f; }
 
     /// <summary>Atravessou uma parede com a cor certa.</summary>
@@ -221,11 +268,15 @@ public class GameManager : MonoBehaviour
 
     public void FimDeJogo()
     {
-        if (Estado == EstadoJogo.FimDeJogo) return;
+        if (Estado == EstadoJogo.FimDeJogo || carregandoCena) return;
         Estado = EstadoJogo.FimDeJogo;
         momentoFim = Time.unscaledTime;
         Tocar(somBatida);
+        SalvarProgressoDaPartida();
+    }
 
+    void SalvarProgressoDaPartida()
+    {
         int pontos = Mathf.FloorToInt(Pontos);
         if (pontos > Recorde)
         {
@@ -267,6 +318,8 @@ public class GameManager : MonoBehaviour
 
     void OnGUI()
     {
+        if (Estado == EstadoJogo.Menu && menuInicial != null && menuInicial.isActiveAndEnabled) return;
+        if (Estado == EstadoJogo.Pausado && menuPausa != null && menuPausa.isActiveAndEnabled) return;
         if (estilo == null)
         {
             estilo = new GUIStyle(GUI.skin.label);
@@ -326,3 +379,4 @@ public class GameManager : MonoBehaviour
         GUI.Label(r, texto, estilo);
     }
 }
+

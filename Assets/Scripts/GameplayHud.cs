@@ -1,18 +1,26 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>HUD compacto no canto superior direito, contido na área segura da tela.</summary>
+/// <summary>Vida e estabilidade a esquerda; pontos e buffs a direita, dentro da area segura.</summary>
 public sealed class GameplayHud : MonoBehaviour
 {
     GameManager jogo;
     Canvas canvas;
-    RectTransform raiz, areaSegura, painel, divisor;
+    CanvasGroup grupo;
+    float aparicao;
+    RectTransform raiz, areaSegura, painel, painelDados, divisor, fundoBuffs;
     Font fonte;
     readonly Text[] valores = new Text[3];
     readonly Text[] buffs = new Text[3];
     PlayerController jogador;
     Text textoVida, textoEstabilidade;
-    RectTransform barraVida, barraEstabilidade;
+    Text porcentagemVida;
+    Text porcentagemEstabilidade;
+    Material materialSolEstabilidade;
+    Text avisoEstabilidade;
+    int nivelAlertaAnterior;
+    float tempoUltimoAlerta = -10f;
+    const float EscalaDistanteHud = 0.68f;
     static readonly Color Ciano = new Color(0.35f, 0.92f, 1f);
     static readonly Color Verde = new Color(0.45f, 1f, 0.62f);
     static readonly Color Rosa = new Color(1f, 0.52f, 0.87f);
@@ -22,58 +30,97 @@ public sealed class GameplayHud : MonoBehaviour
         jogo = GetComponent<GameManager>();
         jogador = Object.FindAnyObjectByType<PlayerController>();
         fonte = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        raiz = NovoRect("HUD superior direito", transform);
+        raiz = NovoRect("HUD do jogo", transform);
         canvas = raiz.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
+        grupo = raiz.gameObject.AddComponent<CanvasGroup>();
         var escala = raiz.gameObject.AddComponent<CanvasScaler>();
         escala.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         escala.referenceResolution = new Vector2(1280f, 720f);
         escala.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
         escala.matchWidthOrHeight = 0.5f;
         areaSegura = NovoRect("Area segura", raiz);
-        painel = NovoRect("Pontos e melhorias", areaSegura);
-        painel.anchorMin = painel.anchorMax = new Vector2(1f, 1f);
-        painel.pivot = new Vector2(1f, 1f);
-        Fundo(painel, new Color(0.015f, 0.025f, 0.05f, 0.78f));
+        painel = NovoRect("Vida e estabilidade", areaSegura);
+        painel.anchorMin = painel.anchorMax = new Vector2(0f, 1f);
+        painel.pivot = new Vector2(0f, 1f);
+        painelDados = NovoRect("Pontos moedas recorde e buffs", areaSegura);
+        painelDados.anchorMin = painelDados.anchorMax = painelDados.pivot = new Vector2(1f, 1f);
+        // Os indicadores orbitais ficam soltos; os dados mantem o fundo a direita.
+        var fundoSuperior = NovoRect("Fundo dos pontos", painelDados);
+        Posicionar(fundoSuperior, 0f, 1f, 0f, 0f, 0f, 72f);
+        Fundo(fundoSuperior, new Color(0.015f, 0.025f, 0.05f, 0.78f));
+        fundoBuffs = NovoRect("Fundo dos buffs", painelDados);
+        Fundo(fundoBuffs, new Color(0.015f, 0.025f, 0.05f, 0.78f));
         Color[] cores = { Color.white, new Color(1f, 0.85f, 0.2f), new Color(0.74f, 0.84f, 0.92f) };
         int[] tamanhos = { 18, 17, 15 };
         for (int i = 0; i < 3; i++)
         {
-            valores[i] = NovoTexto("0", painel, tamanhos[i], cores[i]);
+            valores[i] = NovoTexto("0", painelDados, tamanhos[i], cores[i]);
             Posicionar(valores[i].rectTransform, 0f, 1f, 10f, -10f, 7f + i * 22f, 22f);
-            buffs[i] = NovoTexto("", painel, 15, Color.white);
+            buffs[i] = NovoTexto("", painelDados, 15, Color.white);
         }
-        divisor = NovoRect("Separador", painel);
-        textoVida = NovoTexto("VIDA  100%", painel, 12, Verde);
-        Posicionar(textoVida.rectTransform, 0f, 1f, 10f, -10f, 77f, 16f);
-        var fundoVida = NovoRect("Fundo da vida", painel);
-        Posicionar(fundoVida, 0f, 1f, 10f, -10f, 96f, 7f);
-        Fundo(fundoVida, new Color(0.08f, 0.12f, 0.19f, 1f));
-        barraVida = NovaBarra("Vida do Sol", 96f, Verde);
-
-        textoEstabilidade = NovoTexto("ESTABILIDADE  100%", painel, 12, Ciano);
-        Posicionar(textoEstabilidade.rectTransform, 0f, 1f, 10f, -10f, 108f, 16f);
-        var fundoBarra = NovoRect("Fundo da estabilidade", painel);
-        Posicionar(fundoBarra, 0f, 1f, 10f, -10f, 127f, 7f);
-        Fundo(fundoBarra, new Color(0.08f, 0.12f, 0.19f, 1f));
-        barraEstabilidade = NovoRect("Energia do Sol", painel);
-        barraEstabilidade.anchorMin = barraEstabilidade.anchorMax = barraEstabilidade.pivot = new Vector2(0f, 1f);
-        barraEstabilidade.anchoredPosition = new Vector2(10f, -127f);
-        barraEstabilidade.sizeDelta = new Vector2(260f, 7f);
-        Fundo(barraEstabilidade, Ciano);
-        Posicionar(divisor, 0f, 1f, 10f, -10f, 140f, 1f);
+        divisor = NovoRect("Separador", painelDados);
+        textoVida = NovoTexto("VIDA", painel, 12, Verde);
+        textoVida.alignment = TextAnchor.MiddleCenter;
+        Posicionar(textoVida.rectTransform, 0f, 1f, 10f, -10f, 0f, 16f);
+        textoEstabilidade = NovoTexto("ESTABILIDADE", painel, 12, Color.white);
+        textoEstabilidade.alignment = TextAnchor.MiddleCenter;
+        Posicionar(textoEstabilidade.rectTransform, 0f, 1f, 10f, -10f, 168f, 16f);
+        var sol = NovoRect("Vida e estabilidade orbital", painel);
+        sol.anchorMin = sol.anchorMax = sol.pivot = new Vector2(0.5f, 1f);
+        sol.anchoredPosition = new Vector2(0f, -8f);
+        sol.sizeDelta = new Vector2(384f, 160f);
+        var imagemSolar = sol.gameObject.AddComponent<RawImage>();
+        imagemSolar.raycastTarget = false;
+        imagemSolar.texture = Resources.Load<Texture2D>("Sol3D/Fotosfera");
+        Shader shaderSolar = Resources.Load<Shader>("Gameplay/OrbitalVitals");
+        if (shaderSolar != null)
+        {
+            materialSolEstabilidade = new Material(shaderSolar) { name = "Indicador orbital de vida e estabilidade" };
+            materialSolEstabilidade.SetFloat("_FarScale", EscalaDistanteHud);
+            materialSolEstabilidade.SetTexture("_MainTex", imagemSolar.texture);
+            imagemSolar.material = materialSolEstabilidade;
+        }
+        foreach (Text titulo in new[] { textoVida, textoEstabilidade })
+            titulo.gameObject.AddComponent<HudPerspectiveText>().Configurar(sol, EscalaDistanteHud);
+        porcentagemVida = CriarPercentual("100%", sol, 20f);
+        porcentagemEstabilidade = CriarPercentual("100%", sol, -20f);
+        avisoEstabilidade = NovoTexto("", painel, 13, Color.white);
+        avisoEstabilidade.alignment = TextAnchor.MiddleCenter;
+        Posicionar(avisoEstabilidade.rectTransform, 0f, 1f, 10f, -10f, 188f, 32f);
+        avisoEstabilidade.gameObject.AddComponent<HudPerspectiveText>().Configurar(sol, EscalaDistanteHud);
+        avisoEstabilidade.gameObject.SetActive(false);
+        Posicionar(divisor, 0f, 1f, 10f, -10f, 267f, 1f);
         Fundo(divisor, new Color(0.3f, 0.55f, 0.8f, 0.55f));
         Atualizar();
     }
 
     void LateUpdate() { if (canvas != null) Atualizar(); }
 
+    public void Apresentar(float opacidade)
+    {
+        if (aparicao == opacidade) return;
+        aparicao = opacidade;
+        if (grupo != null) Atualizar();
+    }
+
     void Atualizar()
     {
-        bool mostrar = jogo != null && jogo.Estado != EstadoJogo.Menu;
+        grupo.alpha = jogo != null && jogo.Estado != EstadoJogo.Menu ? 1f : aparicao;
+        bool mostrar = grupo.alpha > 0f;
         painel.gameObject.SetActive(mostrar);
-        if (!mostrar) return;
+        painelDados.gameObject.SetActive(mostrar);
+        if (!mostrar)
+        {
+            nivelAlertaAnterior = 0;
+            tempoUltimoAlerta = -10f;
+            return;
+        }
+        float estabilidade = Mathf.Clamp01(jogo.Estabilidade / 100f);
+        int nivelAlerta = jogo.Estado == EstadoJogo.FimDeJogo || estabilidade <= 0f ? 0 :
+            (estabilidade < 0.15f ? 3 : estabilidade < 0.30f ? 2 : estabilidade < 0.60f ? 1 : 0);
+        const float inicioBuffs = 88f;
         float w = Mathf.Max(1f, Screen.width), h = Mathf.Max(1f, Screen.height);
         Rect segura = Screen.safeArea;
         float x0 = Mathf.Clamp(segura.xMin, 0f, w), x1 = Mathf.Clamp(segura.xMax, 0f, w);
@@ -87,36 +134,69 @@ public sealed class GameplayHud : MonoBehaviour
         float alturaDisponivel = (y1 - y0) / escala;
         float larguraDisponivel = (x1 - x0) / escala;
         int quantidadeBuffs = (jogo.TemEscudo ? 1 : 0) + (jogo.TempoIma > 0f ? 1 : 0) + (jogo.TempoDobro > 0f ? 1 : 0);
-        float alturaPainel = 145f + (quantidadeBuffs > 0 ? 5f + 20f * quantidadeBuffs : 0f);
-        float reducao = Mathf.Min(1f, larguraDisponivel / 328f, alturaDisponivel / (alturaPainel + 40f));
+        float alturaPainel = nivelAlerta > 0 ? 224f : 188f;
+        float alturaDados = quantidadeBuffs > 0 ? inicioBuffs + 20f * quantidadeBuffs + 5f : 78f;
+        float margemX = Mathf.Min(24f, larguraDisponivel * 0.05f);
+        float margemY = Mathf.Min(20f, alturaDisponivel * 0.05f);
+        float intervalo = Mathf.Min(16f, larguraDisponivel * 0.025f);
+        // Reserva espaco para ambos os cantos, inclusive em telas estreitas.
+        float fatorLargura = Mathf.Clamp01((larguraDisponivel - margemX * 2f - intervalo) / (384f * 1.15f + 280f));
+        float reducao = Mathf.Max(0.0001f, Mathf.Min(1.15f * fatorLargura,
+            (alturaDisponivel - margemY * 2f) / alturaPainel));
+        float escalaDados = Mathf.Max(0.0001f, Mathf.Min(fatorLargura,
+            (alturaDisponivel - margemY * 2f) / alturaDados));
         painel.localScale = Vector3.one * reducao;
-        painel.sizeDelta = new Vector2(280f, alturaPainel);
-        painel.anchoredPosition = new Vector2(-24f * reducao, -20f * reducao);
+        painel.sizeDelta = new Vector2(384f, alturaPainel);
+        painel.anchoredPosition = new Vector2(margemX, -margemY);
+        painelDados.localScale = Vector3.one * escalaDados;
+        painelDados.sizeDelta = new Vector2(280f, alturaDados);
+        painelDados.anchoredPosition = new Vector2(-margemX, -margemY);
+        fundoBuffs.gameObject.SetActive(quantidadeBuffs > 0);
+        Posicionar(fundoBuffs, 0f, 1f, 0f, 0f, inicioBuffs - 4f, Mathf.Max(0f, alturaDados - inicioBuffs + 4f));
+        Posicionar(divisor, 0f, 1f, 10f, -10f, inicioBuffs - 7f, 1f);
         valores[0].text = "PONTOS  " + Mathf.FloorToInt(jogo.Pontos);
         valores[1].text = "MOEDAS  " + jogo.Moedas;
         valores[2].text = "RECORDE  " + jogo.Recorde;
         divisor.gameObject.SetActive(quantidadeBuffs > 0);
         if (jogador == null) jogador = Object.FindAnyObjectByType<PlayerController>();
         float vida = jogador != null ? Mathf.Clamp01(jogador.Vida / PlayerController.VidaMaxima) : 1f;
-        textoVida.text = "VIDA  " + Mathf.CeilToInt(vida * 100f) + "%";
-        barraVida.sizeDelta = new Vector2(260f * vida, 7f);
-        Color corVida = vida > 0.60f ? Verde :
-            (vida > 0.30f ? new Color(1f, 0.62f, 0.18f) : new Color(1f, 0.20f, 0.24f));
-        if (vida <= 0.30f) corVida *= 0.78f + 0.22f * Mathf.Sin(Time.unscaledTime * 9f);
-        barraVida.GetComponent<Image>().color = corVida;
+        Color corVida = CorDaVida(vida);
+        porcentagemVida.text = Mathf.CeilToInt(jogador != null ? Mathf.Clamp(jogador.Vida, 0f, PlayerController.VidaMaxima) * 100f / PlayerController.VidaMaxima : 100f) + "%";
         textoVida.color = corVida;
-        float estabilidade = Mathf.Clamp01(jogo.Estabilidade / 100f);
-        textoEstabilidade.text = "ESTABILIDADE  " + Mathf.CeilToInt(jogo.Estabilidade) + "%";
-        barraEstabilidade.sizeDelta = new Vector2(260f * estabilidade, 8f);
-        Color corEnergia = estabilidade > 0.60f ? Ciano :
-            (estabilidade > 0.30f ? new Color(1f, 0.55f, 0.16f) : new Color(1f, 0.20f, 0.24f));
-        if (estabilidade <= 0.30f) corEnergia *= 0.78f + 0.22f * Mathf.Sin(Time.unscaledTime * 9f);
-        barraEstabilidade.GetComponent<Image>().color = corEnergia;
-        textoEstabilidade.color = corEnergia;
-        float y = 145f;
+        porcentagemEstabilidade.text = Mathf.CeilToInt(Mathf.Clamp(jogo.Estabilidade, 0f, 100f)) + "%";
+        if (materialSolEstabilidade != null)
+        {
+            materialSolEstabilidade.SetFloat("_Life", vida);
+            materialSolEstabilidade.SetFloat("_Fill", estabilidade);
+            materialSolEstabilidade.SetColor("_LifeColor", corVida);
+            materialSolEstabilidade.SetColor("_SunColor", CorDaEstabilidade(estabilidade));
+        }
+        AtualizarAlertaEstabilidade(nivelAlerta);
+        float y = inicioBuffs;
         AtualizarBuff(0, jogo.TemEscudo, "ESCUDO", Ciano, ref y);
         AtualizarBuff(1, jogo.TempoIma > 0f, "ÍMÃ  " + Mathf.CeilToInt(jogo.TempoIma) + "s", Verde, ref y);
         AtualizarBuff(2, jogo.TempoDobro > 0f, "PONTOS 2X  " + Mathf.CeilToInt(jogo.TempoDobro) + "s", Rosa, ref y);
+    }
+
+    void AtualizarAlertaEstabilidade(int nivel)
+    {
+        if (nivel > nivelAlertaAnterior && jogo.Estado == EstadoJogo.Jogando &&
+            (Time.time - tempoUltimoAlerta >= 4f || nivel >= 3))
+            tempoUltimoAlerta = Time.time;
+        nivelAlertaAnterior = nivel;
+        avisoEstabilidade.gameObject.SetActive(nivel > 0);
+        textoEstabilidade.color = Color.white;
+        if (nivel == 0) return;
+        string titulo = nivel == 1 ? "ATENÇÃO: ESTABILIDADE BAIXA" :
+            nivel == 2 ? "PERIGO: ESTABILIDADE CRÍTICA" : "URGENTE: COLAPSO IMINENTE";
+        avisoEstabilidade.text = titulo + "\nCOLETE MOEDAS DA SUA COR";
+        Color cor = nivel == 1 ? new Color(1f, 0.75f, 0.18f) :
+            nivel == 2 ? new Color(1f, 0.38f, 0.12f) : new Color(1f, 0.32f, 0.36f);
+        textoEstabilidade.color = cor;
+        float idade = Time.time - tempoUltimoAlerta;
+        // Pulsa brevemente na entrada da faixa; depois o aviso permanece legivel.
+        cor.a = idade >= 0f && idade < 1.5f ? 0.65f + 0.35f * Mathf.Abs(Mathf.Cos(idade * 8f)) : 1f;
+        avisoEstabilidade.color = cor;
     }
 
     void AtualizarBuff(int indice, bool ativo, string texto, Color cor, ref float y)
@@ -153,14 +233,40 @@ public sealed class GameplayHud : MonoBehaviour
         return imagem;
     }
 
-    RectTransform NovaBarra(string nome, float topo, Color cor)
+    static Color CorDaVida(float vida)
     {
-        var barra = NovoRect(nome, painel);
-        barra.anchorMin = barra.anchorMax = barra.pivot = new Vector2(0f, 1f);
-        barra.anchoredPosition = new Vector2(10f, -topo);
-        barra.sizeDelta = new Vector2(260f, 7f);
-        Fundo(barra, cor);
-        return barra;
+        return vida > 0.50f ? new Color(0.12f, 1f, 0.24f) :
+            vida > 0.30f ? new Color(1f, 0.85f, 0.06f) : new Color(1f, 0.10f, 0.14f);
+    }
+
+    static Color CorDaEstabilidade(float valor)
+    {
+        Color vermelho = new Color(1f, 0.08f, 0.12f);
+        Color laranja = new Color(1f, 0.40f, 0.06f);
+        Color amarelo = new Color(1f, 0.85f, 0.08f);
+        Color ciano = new Color(0.04f, 0.9f, 1f);
+        Color azul = new Color(0.12f, 0.40f, 1f);
+        if (valor <= 0.30f) return Color.Lerp(vermelho, laranja, Mathf.Clamp01(valor / 0.30f));
+        if (valor <= 0.60f) return Color.Lerp(laranja, amarelo, (valor - 0.30f) / 0.30f);
+        if (valor <= 0.80f) return Color.Lerp(amarelo, ciano, (valor - 0.60f) / 0.20f);
+        return Color.Lerp(ciano, azul, Mathf.Clamp01((valor - 0.80f) / 0.20f));
+    }
+
+    Text CriarPercentual(string valor, Transform pai, float y)
+    {
+        Text texto = NovoTexto(valor, pai, 20, Color.white);
+        var rect = texto.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = new Vector2(0f, y);
+        rect.sizeDelta = new Vector2(100f, 28f);
+        texto.alignment = TextAnchor.MiddleCenter;
+        var contorno = texto.gameObject.AddComponent<Outline>();
+        contorno.effectColor = Color.black;
+        contorno.effectDistance = new Vector2(1.5f, -1.5f);
+        // Aplica depois da sombra e do contorno para deformar o conjunto inteiro.
+        texto.gameObject.AddComponent<HudPerspectiveText>().Configurar((RectTransform)pai, EscalaDistanteHud);
+        return texto;
     }
 
     Text NovoTexto(string conteudo, Transform pai, int tamanho, Color cor)
@@ -186,5 +292,22 @@ public sealed class GameplayHud : MonoBehaviour
 
     void OnDisable() { if (raiz != null) raiz.gameObject.SetActive(false); }
     void OnEnable() { if (raiz != null) raiz.gameObject.SetActive(true); }
-    void OnDestroy() { if (raiz != null) Destroy(raiz.gameObject); }
+    void OnDestroy()
+    {
+        if (raiz != null) Destroy(raiz.gameObject);
+        if (materialSolEstabilidade != null) Destroy(materialSolEstabilidade);
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

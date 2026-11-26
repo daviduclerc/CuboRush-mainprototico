@@ -54,6 +54,9 @@ public class TrackItem : MonoBehaviour
     [HideInInspector] public float velocidadeQuedaMeteoro = 8f;
 
     [HideInInspector] public PolyhedronHitShape formaPoliedro;
-    public Bounds Limites => formaPoliedro != null ? formaPoliedro.Limites : new Bounds(transform.position, tamanho);
-    public bool Intersects(Bounds caixa) => formaPoliedro != null ? formaPoliedro.Intersects(caixa) : Limites.Intersects(caixa);
+    [HideInInspector] public ObstaculoSolar obstaculoSolar;
+    public Bounds Limites => obstaculoSolar != null ? obstaculoSolar.Limites :
+        formaPoliedro != null ? formaPoliedro.Limites : new Bounds(transform.position, tamanho);
+    public bool Intersects(Bounds caixa) => obstaculoSolar != null ? obstaculoSolar.Intersecta(caixa, caixa) :
+        formaPoliedro != null ? formaPoliedro.Intersects(caixa) : Limites.Intersects(caixa);
 }

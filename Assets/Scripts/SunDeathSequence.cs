@@ -32,13 +32,12 @@ public sealed class SunDeathSequence : MonoBehaviour
     static readonly int PistaEscura = Shader.PropertyToID("_SolarDeathDarkness");
     static readonly int Tint = Shader.PropertyToID("_Tint");
     static readonly int Exposicao = Shader.PropertyToID("_Exposure");
-    static readonly Color AzulFrio = new Color(0.36f, 0.52f, 0.82f);
     static readonly Color Laranja = new Color(1f, 0.28f, 0.055f);
 
     Material ceu, materialParticulas;
-    Color ambienteOriginal, corCeu, corDirecional, corDoSol;
+    Color ambienteOriginal, corDoSol;
     float intensidadeDirecional, exposicaoOriginal, brilhoOriginal;
-    bool temCorCeu, temExposicao, explodiu;
+    bool temExposicao, explodiu;
     Bloom bloom;
     Light luzSolar;
     Vector3 escalaOriginal, posicaoOriginal, centro;
@@ -93,15 +92,12 @@ public sealed class SunDeathSequence : MonoBehaviour
                 }
         if (luzDirecional != null)
         {
-            corDirecional = luzDirecional.color;
             intensidadeDirecional = luzDirecional.intensity;
         }
 
         ambienteOriginal = RenderSettings.ambientLight;
         ceu = RenderSettings.skybox;
-        temCorCeu = ceu != null && ceu.HasProperty(Tint);
         temExposicao = ceu != null && ceu.HasProperty(Exposicao);
-        if (temCorCeu) corCeu = ceu.GetColor(Tint);
         if (temExposicao) exposicaoOriginal = ceu.GetFloat(Exposicao);
 
         if (volumeDoBloom == null)
@@ -264,7 +260,7 @@ public sealed class SunDeathSequence : MonoBehaviour
         particulasDeEnergia.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         luzSolar.enabled = false;
         Shader.SetGlobalFloat(PulsoPista, 1f);
-        SolarDeathExplosion.Criar(centro, corDoSol, tamanhoSupernova);
+        SolarDeathExplosion.Criar(centro, tamanhoSupernova);
         GameManager.Instancia?.SomDeImpacto();
         if (cameraDaPista != null) cameraDaPista.AplicarTremor(0.58f, forcaDoImpacto);
     }
@@ -275,15 +271,11 @@ public sealed class SunDeathSequence : MonoBehaviour
         float escuro = Escurecimento;
         Shader.SetGlobalFloat(PistaEscura, escuro);
         Shader.SetGlobalFloat(PulsoPista, 1f - escuro);
-        RenderSettings.ambientLight = Color.Lerp(ambienteOriginal, AzulFrio * 0.12f, escuro);
-        if (temCorCeu) ceu.SetColor(Tint, Color.Lerp(corCeu, AzulFrio, escuro * 0.55f));
+        RenderSettings.ambientLight = ambienteOriginal * Mathf.Lerp(1f, 0.18f, escuro);
         if (temExposicao) ceu.SetFloat(Exposicao, exposicaoOriginal * Mathf.Lerp(1f, 0.38f, escuro));
         if (luzDirecional != null)
-        {
-            luzDirecional.color = Color.Lerp(corDirecional, AzulFrio, escuro);
             luzDirecional.intensity = intensidadeDirecional * Mathf.Lerp(1f, 0.14f, escuro);
-        }
-        if (bloom != null) bloom.intensity.value = brilhoOriginal * Mathf.Lerp(1.75f, 0.24f, escuro);
+        if (bloom != null) bloom.intensity.value = brilhoOriginal * Mathf.Lerp(1.10f, 0.32f, escuro);
     }
 
     void OnDestroy()

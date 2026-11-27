@@ -12,27 +12,26 @@ public sealed class SolarDeathExplosion : MonoBehaviour
     float idade;
     float duracao = 1.9f;
     float escala;
-    Color corExplosao;
+    static readonly Color CorExplosao = new Color(1f, 0.42f, 0.085f);
 
-    public static void Criar(Vector3 centro, Color cor, float tamanho)
+    public static void Criar(Vector3 centro, float tamanho)
     {
         var objeto = new GameObject("ExplosaoSolar");
         objeto.transform.position = centro;
-        objeto.AddComponent<SolarDeathExplosion>().Iniciar(cor, Mathf.Max(0.6f, tamanho));
+        objeto.AddComponent<SolarDeathExplosion>().Iniciar(Mathf.Max(0.6f, tamanho));
     }
 
-    void Iniciar(Color cor, float tamanho)
+    void Iniciar(float tamanho)
     {
         escala = tamanho;
-        corExplosao = Color.Lerp(cor, new Color(1f, 0.22f, 0.035f), 0.32f);
         CriarParticulas();
         CriarOndaDeChoque();
 
         clarão = gameObject.AddComponent<Light>();
         clarão.type = LightType.Point;
         clarão.color = new Color(1f, 0.58f, 0.2f);
-        clarão.intensity = 24f * escala;
-        clarão.range = 16f * escala;
+        clarão.intensity = 12f * escala;
+        clarão.range = 9f * escala;
         clarão.shadows = LightShadows.None;
     }
 
@@ -42,6 +41,7 @@ public sealed class SolarDeathExplosion : MonoBehaviour
         var main = plasma.main;
         main.playOnAwake = false;
         main.loop = false;
+        main.useUnscaledTime = true;
         main.duration = 1.45f;
         main.maxParticles = 260;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
@@ -59,9 +59,9 @@ public sealed class SolarDeathExplosion : MonoBehaviour
         gradient.SetKeys(
             new[] {
                 new GradientColorKey(Color.white, 0f),
-                new GradientColorKey(Color.Lerp(corExplosao, Color.white, 0.25f), 0.16f),
-                new GradientColorKey(corExplosao, 0.52f),
-                new GradientColorKey(new Color(0.24f, 0.12f, 0.48f), 1f)
+                new GradientColorKey(Color.Lerp(CorExplosao, Color.white, 0.25f), 0.16f),
+                new GradientColorKey(CorExplosao, 0.52f),
+                new GradientColorKey(new Color(0.38f, 0.10f, 0.035f), 1f)
             },
             new[] {
                 new GradientAlphaKey(1f, 0f),
@@ -76,8 +76,8 @@ public sealed class SolarDeathExplosion : MonoBehaviour
         if (shader != null)
         {
             materialPlasma = new Material(shader) { name = "Plasma brilhante da explosao solar" };
-            if (materialPlasma.HasProperty("_Tint")) materialPlasma.SetColor("_Tint", corExplosao * 3.6f);
-            if (materialPlasma.HasProperty("_BaseColor")) materialPlasma.SetColor("_BaseColor", corExplosao * 2.5f);
+            if (materialPlasma.HasProperty("_Tint")) materialPlasma.SetColor("_Tint", CorExplosao * 2.5f);
+            if (materialPlasma.HasProperty("_BaseColor")) materialPlasma.SetColor("_BaseColor", CorExplosao * 1.8f);
             var renderer = GetComponent<ParticleSystemRenderer>();
             renderer.sharedMaterial = materialPlasma;
             renderer.renderMode = ParticleSystemRenderMode.Stretch;
@@ -141,10 +141,10 @@ public sealed class SolarDeathExplosion : MonoBehaviour
             ondaChoque.SetPosition(i, new Vector3(Mathf.Cos(angulo) * raio, Mathf.Sin(angulo) * raio, 0f));
         }
         float alpha = Mathf.Clamp01(1f - progresso);
-        Color cor = Color.Lerp(corExplosao, Color.white, 0.42f);
+        Color cor = Color.Lerp(CorExplosao, Color.white, 0.42f);
         cor.a = alpha;
         ondaChoque.startColor = cor;
-        ondaChoque.endColor = new Color(corExplosao.r, corExplosao.g, corExplosao.b, alpha * 0.55f);
+        ondaChoque.endColor = new Color(CorExplosao.r, CorExplosao.g, CorExplosao.b, alpha * 0.55f);
         float largura = Mathf.Lerp(0.46f, 0.025f, progresso) * escala;
         ondaChoque.startWidth = largura;
         ondaChoque.endWidth = largura * 0.28f;
@@ -162,8 +162,8 @@ public sealed class SolarDeathExplosion : MonoBehaviour
         AtualizarOnda(progresso);
         if (clarão != null)
         {
-            clarão.intensity = Mathf.Lerp(24f * escala, 0f, Mathf.Clamp01(idade / 0.8f));
-            clarão.range = Mathf.Lerp(16f * escala, 0f, Mathf.Clamp01(idade / 1.3f));
+            clarão.intensity = Mathf.Lerp(12f * escala, 0f, Mathf.Clamp01(idade / 0.64f));
+            clarão.range = Mathf.Lerp(9f * escala, 0f, Mathf.Clamp01(idade / 1.1f));
         }
         if (idade >= duracao) Destroy(gameObject);
     }

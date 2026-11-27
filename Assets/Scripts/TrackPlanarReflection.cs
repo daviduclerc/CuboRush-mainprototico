@@ -101,9 +101,6 @@ public sealed class TrackPlanarReflection : MonoBehaviour
         Shader.SetGlobalTexture("_TrackPlanarTexture", imagem);
         Shader.SetGlobalMatrix("_TrackReflectionVP", GL.GetGPUProjectionMatrix(espelho.projectionMatrix, true) * espelho.worldToCameraMatrix);
         Shader.SetGlobalVector("_TrackPlanarTexel", new Vector4(1f / largura, 1f / altura, largura, altura));
-        Transform sol = jogador.VisualSolar != null ? jogador.VisualSolar : jogador.transform;
-        Shader.SetGlobalVector("_TrackSunPosition", sol.position);
-        Shader.SetGlobalColor("_TrackSunColor", jogador.CorVisualAtual);
         GameManager jogo = GameManager.Instancia;
         float energia = jogo != null ? Mathf.Clamp01(jogo.Estabilidade / 100f) : 1f;
         Shader.SetGlobalFloat("_TrackReflectionStrength", jogo != null && jogo.Estado == EstadoJogo.FimDeJogo ? 0f : Mathf.Lerp(0.15f, 0.75f, energia));

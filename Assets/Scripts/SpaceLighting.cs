@@ -1,59 +1,53 @@
 using UnityEngine;
 
-/// <summary>Luzes de preenchimento da pista que acompanham o jogador.</summary>
+/// <summary>Luz de preenchimento da pista que acompanha a fotosfera.</summary>
 public class SpaceLighting : MonoBehaviour
 {
     public Transform alvo;
     public PlayerController jogador;
 
-    Light luzQuente;
-    Light luzFria;
-
-
+    Light luzSolar;
+    static readonly int PosicaoDoSol = Shader.PropertyToID("_TrackSunPosition");
+    static readonly int CorDoSol = Shader.PropertyToID("_TrackSunColor");
+    static readonly int BrilhoDoSol = Shader.PropertyToID("_TrackSunGlow");
 
     void Start()
     {
-        luzQuente = CriarLuz("LuzDeAcrecao", new Color(1f, 0.64f, 0.39f), 4.0f, 28f);
-        luzFria = CriarLuz("LuzDeEstrelas", new Color(0.34f, 0.62f, 1f), 2.4f, 20f);
-
-        AtualizarCorDoSol();
-        AtualizarPosicao();
-    }
-
-    Light CriarLuz(string nome, Color cor, float intensidade, float alcance)
-    {
-        GameObject objeto = new GameObject(nome);
-        Light luz = objeto.AddComponent<Light>();
-        luz.type = LightType.Point;
-        luz.color = cor;
-        luz.intensity = intensidade;
-        luz.range = alcance;
-        luz.shadows = LightShadows.None;
-        return luz;
+        GameObject objeto = new GameObject("LuzDoSol");
+        objeto.transform.SetParent(transform, false);
+        luzSolar = objeto.AddComponent<Light>();
+        luzSolar.type = LightType.Point;
+        luzSolar.range = 7f;
+        luzSolar.shadows = LightShadows.None;
+        luzSolar.enabled = false;
     }
 
     void LateUpdate()
     {
-        AtualizarCorDoSol();
-        if (alvo != null) AtualizarPosicao();
+        if (jogador == null || luzSolar == null) return;
+        Transform sol = jogador.VisualSolar != null ? jogador.VisualSolar : alvo;
+        if (sol == null) return;
+
+        bool colapso = GameManager.Instancia?.Estado == EstadoJogo.FimDeJogo;
+        Color corSolar = jogador.CorAtual;
+        float energia = Mathf.Clamp01(jogador.CorVisualAtual.maxColorComponent);
+        Vector3 centro = sol.position;
+
+        // Durante o deslize a fotosfera afunda. Mantém uma luz de preenchimento
+        // acima do piso, alinhada ao personagem, para evitar cortes no brilho.
+        centro.y = Mathf.Max(0.28f, centro.y);
+        luzSolar.transform.position = centro;
+        luzSolar.color = corSolar;
+        luzSolar.intensity = 2.2f * energia;
+        luzSolar.enabled = !colapso;
+        Shader.SetGlobalVector(PosicaoDoSol, centro);
+        Shader.SetGlobalColor(CorDoSol, corSolar);
+        Shader.SetGlobalFloat(BrilhoDoSol, colapso ? 0f : energia);
     }
 
-    void AtualizarCorDoSol()
+    void OnDisable()
     {
-        if (jogador == null) return;
-
-        Color corSolar = jogador.CorVisualAtual;
-        float energia = GameManager.Instancia != null ? GameManager.Instancia.Estabilidade / 100f : 1f;
-        luzQuente.color = corSolar;
-        luzFria.color = corSolar;
-        luzQuente.intensity = 5f * Mathf.SmoothStep(0.08f, 1f, energia);
-        luzFria.intensity = 0f;
-    }
-
-    void AtualizarPosicao()
-    {
-        // A luz principal nasce junto ao Sol; a segunda espalha a mesma cor pela pista.
-        luzQuente.transform.position = alvo.position + new Vector3(0f, 0.25f, 0.15f);
-        luzFria.transform.position = alvo.position + new Vector3(-2f, 2f, 3f);
+        if (luzSolar != null) luzSolar.enabled = false;
+        Shader.SetGlobalFloat(BrilhoDoSol, 0f);
     }
 }

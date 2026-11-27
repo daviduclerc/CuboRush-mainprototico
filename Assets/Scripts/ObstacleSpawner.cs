@@ -163,9 +163,10 @@ public class ObstacleSpawner : MonoBehaviour
             if (item == null) { itens.RemoveAt(i); continue; }
 
             Transform t = item.transform;
+            Vector3 posicaoAnteriorDoItem = t.position;
 
             // Ficou para trás: apaga.
-            if (t.position.z < zJogador - 15f)
+            if (t.position.z < Mathf.Min(zJogador, anterior.center.z) - 15f)
             {
                 Remover(i);
                 continue;
@@ -252,13 +253,11 @@ public class ObstacleSpawner : MonoBehaviour
                 if (raio < raioIma)
                 {
                     float dt = Time.deltaTime;
-                    float giro = Mathf.Clamp(9f / Mathf.Max(raio, 0.6f), 1.5f, 12f) * Mathf.Rad2Deg * dt;
+                    float giro = 140f * Mathf.Clamp01(raio / 2f) * dt;
                     relativo = Quaternion.AngleAxis(giro, Vector3.up) * relativo;
-                    float altura = Mathf.Lerp(relativo.y, 0f, 1f - Mathf.Exp(-5f * dt));
-                    Vector3 plano = new Vector3(relativo.x, 0f, relativo.z);
-                    float raioPlano = Mathf.Max(0f, plano.magnitude - Mathf.Max(5f, raio * 2.6f) * dt);
-                    plano = plano.sqrMagnitude > 0.0001f ? plano.normalized * raioPlano : Vector3.zero;
-                    t.position = centro + plano + Vector3.up * altura;
+                    // A atração precisa vencer a velocidade da corrida, inclusive atrás do Sol.
+                    float velocidadeIma = Mathf.Max(12f, jogo.Velocidade + 8f);
+                    t.position = centro + Vector3.MoveTowards(relativo, Vector3.zero, velocidadeIma * dt);
                 }
             }
 
@@ -272,10 +271,13 @@ public class ObstacleSpawner : MonoBehaviour
                     RegistrarTravessia(item, limites, anterior, caixaJogador, jogo);
                     continue;
                 }
-                item.atravessado = true;
-                item.obstaculoSolar.Sinalizar(false);
             }
-            else if (!item.Intersects(caixaJogador)) continue;
+            else
+            {
+                Bounds anteriorRelativo = anterior;
+                anteriorRelativo.center += t.position - posicaoAnteriorDoItem;
+                if (!item.Intersects(anteriorRelativo, caixaJogador)) continue;
+            }
 
             switch (item.tipo)
             {
@@ -294,54 +296,35 @@ public class ObstacleSpawner : MonoBehaviour
                 case TipoItem.Dobro: jogo.AtivarDobro(); Remover(i); break;
 
                 case TipoItem.Obstaculo:
-                    // Portais coloridos só deixam atravessar sem dano com a cor correspondente.
-                    if (item.corId >= 0)
+                {
+                    if (item.atravessado) break;
+                    item.atravessado = true;
+                    ColorPortalVisual portal = item.corId >= 0 ? item.GetComponent<ColorPortalVisual>() : null;
+                    if (item.corId >= 0 && item.corId == jogador.CorId)
                     {
-                        if (item.corId == jogador.CorId)
-                        {
-                            if (!item.atravessado)
-                            {
-                                item.atravessado = true;
-                                ColorPortalVisual portal = item.GetComponent<ColorPortalVisual>();
-                                if (portal != null) portal.Atravessar(true);
-                                jogo.BonusDeCor();
-                            }
-                            break;
-                        }
-
-                        // A cor errada causa dano uma vez; as piscadas impedem dano repetido ao atravessar.
-                        if (!item.atravessado)
-                        {
-                            item.atravessado = true;
-                            ColorPortalVisual portal = item.GetComponent<ColorPortalVisual>();
-                            if (portal != null) portal.Atravessar(false);
-                            if (!jogador.Invencivel && jogador.ReceberDano(25f))
-                            {
-                                CameraFollow.Tremer(0.24f, 0.32f);
-                                if (jogo.Estado == EstadoJogo.FimDeJogo) return;
-                            }
-                        }
+                        if (portal != null) portal.Atravessar(true);
+                        jogo.BonusDeCor();
                         break;
                     }
 
+                    if (portal != null) portal.Atravessar(false);
+                    if (item.obstaculoSolar != null) item.obstaculoSolar.Sinalizar(false);
                     if (jogador.Invencivel) break;
                     if (jogo.ConsumirEscudo())
                     {
-                        // O escudo quebra o obstáculo e dá um instante de proteção.
-                        Remover(i);
+                        // O portal continua visível para terminar sua animação.
+                        if (portal == null) Remover(i);
                         jogador.FicarInvencivel(1.2f);
                         CameraFollow.Tremer(0.2f, 0.25f);
                     }
-                    else
+                    else if (jogador.ReceberDano(25f))
                     {
-                        if (jogador.ReceberDano(25f))
-                        {
-                            CameraFollow.Tremer(0.24f, 0.32f);
-                            if (jogo.Estado == EstadoJogo.FimDeJogo) return;
-                            if (item.obstaculoSolar != null) jogo.SomDeImpacto();
-                        }
+                        CameraFollow.Tremer(0.24f, 0.32f);
+                        if (jogo.Estado == EstadoJogo.FimDeJogo) return;
+                        if (item.obstaculoSolar != null) jogo.SomDeImpacto();
                     }
                     break;
+                }
             }
         }
     }

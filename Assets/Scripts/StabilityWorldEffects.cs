@@ -175,7 +175,7 @@ public sealed class StabilityWorldEffects : MonoBehaviour
         if (colapsoFinal)
         {
             gigante.localScale = Vector3.one * 1.5f;
-            materialGigante.color = new Color(0.80f, 0.91f, 1f);
+            materialGigante.color = new Color(1f, 0.92f, 0.82f);
             if (materialGigante.HasProperty("_BaseColor")) materialGigante.SetColor("_BaseColor", materialGigante.color);
             if (materialGigante.HasProperty("_EmissionColor")) materialGigante.SetColor("_EmissionColor", materialGigante.color * 2.5f);
             return;
@@ -218,14 +218,16 @@ public sealed class StabilityWorldEffects : MonoBehaviour
 
     void CriarNebulosaFinal()
     {
+        Shader shader = Resources.Load<Shader>("Gameplay/SolarDeathNebula");
+        if (shader == null || !shader.isSupported) return;
         renderNebulosa = new Renderer[2];
         materiaisNebulosa = new Material[2];
         texturasNebulosa = new Texture2D[2];
-        Color[] paleta = { new Color(0.26f, 0.08f, 0.95f), new Color(0.04f, 0.62f, 1f) };
+        Color[] paleta = { new Color(0.68f, 0.18f, 0.10f), new Color(0.76f, 0.37f, 0.16f) };
         for (int camada = 0; camada < renderNebulosa.Length; camada++)
         {
             GameObject plano = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            plano.name = camada == 0 ? "NebulosaFinalVioleta" : "NebulosaFinalAzul";
+            plano.name = camada == 0 ? "NebulosaFinalCobre" : "NebulosaFinalDourada";
             Collider colisor = plano.GetComponent<Collider>();
             if (colisor != null) Destroy(colisor);
             plano.transform.SetParent(transform, false);
@@ -233,30 +235,8 @@ public sealed class StabilityWorldEffects : MonoBehaviour
 
             Texture2D textura = GerarTexturaNebulosa(camada, paleta[camada]);
             texturasNebulosa[camada] = textura;
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader == null) shader = Shader.Find("Unlit/Transparent");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
             Material material = new Material(shader) { name = "Nuvens da nebulosa final" };
             material.mainTexture = textura;
-            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", textura);
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
-            material.color = Color.white;
-            // A nuvem é transparente até o colapso; o brilho próprio mantém a cor no escuro.
-            material.SetOverrideTag("RenderType", "Transparent");
-            material.SetInt("_Surface", 1);
-            material.SetInt("_Blend", 0);
-            material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            material.SetInt("_BlendOp", (int)UnityEngine.Rendering.BlendOp.Add);
-            material.SetInt("_ZWrite", 0);
-            material.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
-            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            material.renderQueue = (int)RenderQueue.Transparent;
-            if (material.HasProperty("_EmissionColor"))
-            {
-                material.EnableKeyword("_EMISSION");
-                material.SetColor("_EmissionColor", paleta[camada] * 2.8f);
-            }
             materiaisNebulosa[camada] = material;
             Renderer renderer = plano.GetComponent<Renderer>();
             renderer.sharedMaterial = material;
@@ -284,8 +264,9 @@ public sealed class StabilityWorldEffects : MonoBehaviour
             float detalhe = Mathf.PerlinNoise(u * 12f + deslocamento * 0.37f, v * 12f + deslocamento * 0.73f);
             float poeira = Mathf.PerlinNoise(u * 28f + deslocamento, v * 28f + deslocamento * 0.5f);
             float nuvem = Mathf.Clamp01((nuvemGrande * 0.68f + detalhe * 0.25f + poeira * 0.07f - 0.48f) * 2.4f);
-            float borda = Mathf.Clamp01(Mathf.Min(Mathf.Min(u, 1f - u) * 5f, Mathf.Min(v, 1f - v) * 5f));
-            float alpha = nuvem * borda * 0.86f;
+            float raio = new Vector2(2f * u - 1f, 2f * v - 1f).magnitude;
+            float borda = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.28f, 0.98f, raio));
+            float alpha = nuvem * borda;
             float brilho = 0.62f + detalhe * 0.7f;
             pixels[y * resolucao + x] = new Color(cor.r * brilho, cor.g * brilho, cor.b * brilho, alpha);
         }
@@ -307,22 +288,11 @@ public sealed class StabilityWorldEffects : MonoBehaviour
             Transform plano = renderer.transform;
             plano.position = cameraJogo.transform.TransformPoint(new Vector3(i == 0 ? -5f : 7f, i == 0 ? 2f : -3f, distancia + i * 2f));
             plano.rotation = cameraJogo.transform.rotation;
-            plano.localScale = new Vector3(largura * 1.22f, altura * 1.22f, 1f);
+            plano.localScale = new Vector3(largura * 0.74f, altura * 0.57f, 1f);
             bool deveAparecer = intensidade > 0.01f;
             if (plano.gameObject.activeSelf != deveAparecer) plano.gameObject.SetActive(deveAparecer);
-            Color cor = Color.white;
-            cor.a = intensidade * (i == 0 ? 0.92f : 0.78f);
-            Material material = materiaisNebulosa[i];
-            if (material != null)
-            {
-                if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", cor);
-                material.color = cor;
-                if (material.HasProperty("_EmissionColor"))
-                {
-                    Color emissao = i == 0 ? new Color(0.38f, 0.08f, 1f) : new Color(0.05f, 0.52f, 1f);
-                    material.SetColor("_EmissionColor", emissao * (3f * intensidade));
-                }
-            }
+            float opacidade = intensidade * (i == 0 ? 0.44f : 0.32f);
+            materiaisNebulosa[i].SetFloat("_Opacity", opacidade);
         }
     }
 

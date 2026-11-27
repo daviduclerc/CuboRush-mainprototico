@@ -42,6 +42,7 @@ Shader "CuboRush/ReflectiveTrack"
             float4 _TrackPlanarTexel;
             float4 _TrackSunPosition;
             half4 _TrackSunColor;
+            float _TrackSunGlow;
             float _TrackReflectionStrength;
             float _SolarDeathTrackPulse;
             float _SolarDeathDarkness;
@@ -188,7 +189,7 @@ Shader "CuboRush/ReflectiveTrack"
                 float proximidade=1-smoothstep(4,20,distancia);
                 float3 l=normalize(_TrackSunPosition.xyz-i.world+float3(0,0.2,0));
                 float especular=pow(saturate(dot(normalSuperficie,normalize(l+v))),lerp(96,52,vinil));
-                baseColor+=_TrackSunColor.rgb*especular*proximidade*lerp(0.45,0.22,vinil);
+                baseColor+=_TrackSunColor.rgb*especular*proximidade*lerp(0.45,0.22,vinil)*_TrackSunGlow;
                 float2 uv=i.reflexo.xy/max(i.reflexo.w,0.0001)*0.5+0.5;
                 // A ondulação do vidro entorta levemente o reflexo.
                 uv+=ondaVidro*lerp(0.004,0.001,vinil)*longe;

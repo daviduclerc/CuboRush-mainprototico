@@ -172,26 +172,9 @@ public sealed class ObstaculoSolar : MonoBehaviour
         foreach (BoxCollider caixa in volumes)
         {
             var alvo = new Bounds(transform.position + caixa.center, caixa.size);
-            float entrada = 0f, saida = 1f;
-            bool acertou = true;
-            for (int eixo = 0; eixo < 3; eixo++)
-            {
-                if (Recortar(anterior.max[eixo] - alvo.min[eixo], atual.max[eixo] - alvo.min[eixo], ref entrada, ref saida) &&
-                    Recortar(alvo.max[eixo] - anterior.min[eixo], alvo.max[eixo] - atual.min[eixo], ref entrada, ref saida)) continue;
-                acertou = false;
-                break;
-            }
-            if (acertou) return true;
+            if (TrackItem.CruzouCaixa(anterior, atual, alvo)) return true;
         }
         return false;
-    }
-
-    static bool Recortar(float inicio, float fim, ref float entrada, ref float saida)
-    {
-        if (inicio < 0f && fim < 0f) return false;
-        if (inicio < 0f) entrada = Mathf.Max(entrada, inicio / (inicio - fim));
-        else if (fim < 0f) saida = Mathf.Min(saida, inicio / (inicio - fim));
-        return entrada <= saida;
     }
 
     static Vector3[] Cantos(float largura, float profundidade)

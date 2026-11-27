@@ -74,4 +74,30 @@ public class TrackItem : MonoBehaviour
         formaPoliedro != null ? formaPoliedro.Limites : new Bounds(transform.position, tamanho);
     public bool Intersects(Bounds caixa) => obstaculoSolar != null ? obstaculoSolar.Intersecta(caixa, caixa) :
         formaPoliedro != null ? formaPoliedro.Intersects(caixa) : Limites.Intersects(caixa);
+
+    public bool Intersects(Bounds anterior, Bounds atual)
+    {
+        if (obstaculoSolar != null) return obstaculoSolar.Intersecta(anterior, atual);
+        // Preserva o contorno real dos poliedros nas batidas de contato.
+        if (formaPoliedro != null) return formaPoliedro.Intersects(atual);
+        return CruzouCaixa(anterior, atual, Limites);
+    }
+
+    internal static bool CruzouCaixa(Bounds anterior, Bounds atual, Bounds alvo)
+    {
+        float entrada = 0f, saida = 1f;
+        for (int eixo = 0; eixo < 3; eixo++)
+            if (!Recortar(anterior.max[eixo] - alvo.min[eixo], atual.max[eixo] - alvo.min[eixo], ref entrada, ref saida) ||
+                !Recortar(alvo.max[eixo] - anterior.min[eixo], alvo.max[eixo] - atual.min[eixo], ref entrada, ref saida))
+                return false;
+        return true;
+    }
+
+    static bool Recortar(float inicio, float fim, ref float entrada, ref float saida)
+    {
+        if (inicio < 0f && fim < 0f) return false;
+        if (inicio < 0f) entrada = Mathf.Max(entrada, inicio / (inicio - fim));
+        else if (fim < 0f) saida = Mathf.Min(saida, inicio / (inicio - fim));
+        return entrada <= saida;
+    }
 }

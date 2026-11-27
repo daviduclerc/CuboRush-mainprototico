@@ -209,8 +209,8 @@ public class PlayerController : MonoBehaviour
         transform.position = p;
         posicaoAnterior = p;
 
-        // Bolinha que gira em volta do cubo enquanto houver escudo.
-        orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", null,
+        // Bolinha que orbita o modelo visível enquanto houver escudo.
+        orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", transform,
             Vector3.zero, Vector3.one * 0.3f, new Color(0.75f, 0.95f, 1f), true).transform;
         orbeEscudo.gameObject.SetActive(false);
         if (visualSolar && GetComponent<SolarMotionFlames>() == null)
@@ -410,14 +410,6 @@ public class PlayerController : MonoBehaviour
         for (int i = 0; i < visuais.Length; i++)
             if (visuais[i] != null) visuais[i].enabled = visivel;
 
-        // Orbe do escudo.
-        if (orbeEscudo.gameObject.activeSelf != jogo.TemEscudo)
-            orbeEscudo.gameObject.SetActive(jogo.TemEscudo);
-        if (jogo.TemEscudo)
-        {
-            float a = Time.time * 6f;
-            orbeEscudo.position = Limites.center + new Vector3(Mathf.Cos(a), 0.15f, Mathf.Sin(a)) * 0.95f;
-        }
     }
 
     void LerEntrada(GameManager jogo)
@@ -621,6 +613,24 @@ public class PlayerController : MonoBehaviour
     void LateUpdate()
     {
         if (visualSolar && visualSolarRaiz != null) AtualizarBrilhoSolar();
+        AtualizarOrbeDoEscudo();
+    }
+
+    void AtualizarOrbeDoEscudo()
+    {
+        if (orbeEscudo == null) return;
+        GameManager jogo = GameManager.Instancia;
+        bool ativo = jogo != null && jogo.TemEscudo && !jogo.EmResultado;
+        if (ativo)
+        {
+            Vector3 centro = visualSolarRaiz != null ? visualSolarRaiz.position : Limites.center;
+            float raioVisivel = deformacaoSolar != null ? raioSolarBase * deformacaoSolar.localScale.x : 0.50f;
+            float angulo = Time.time * 6f;
+            float raioOrbita = raioVisivel + 0.10f;
+            orbeEscudo.position = centro + new Vector3(Mathf.Cos(angulo) * raioOrbita,
+                Mathf.Sin(angulo) * raioVisivel * 0.18f, Mathf.Sin(angulo) * raioOrbita);
+        }
+        if (orbeEscudo.gameObject.activeSelf != ativo) orbeEscudo.gameObject.SetActive(ativo);
     }
 
     /// <summary>Posição X do centro de uma faixa (a pista é centrada em X = 0).</summary>

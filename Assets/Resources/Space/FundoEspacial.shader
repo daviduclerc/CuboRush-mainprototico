@@ -98,7 +98,7 @@ Shader "CuboRush/FundoEspacial"
                 // Teto de brilho: as partes mais quentes do disco não estouram em clarão branco no bloom.
                 half pico = max(cor.r, max(cor.g, cor.b));
                 cor *= min(1.0h, _Limite / max(pico, 0.0001h));
-                cor *= lerp(half3(1.0h, 1.0h, 1.0h), half3(0.12h, 0.22h, 0.40h), saturate(_SolarDeathDarkness));
+                cor *= lerp(1.0h, 0.30h, saturate(_SolarDeathDarkness));
                 // Bordas suaves, caso a imagem não cubra a tela toda.
                 float2 d = min(input.uv, 1.0 - input.uv);
                 float alpha = smoothstep(0.0, max(_Borda, 0.0001), min(d.x, d.y));

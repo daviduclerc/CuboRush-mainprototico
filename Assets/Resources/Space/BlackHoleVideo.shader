@@ -24,6 +24,7 @@ Shader "CuboRush/BlackHoleVideo"
             float _Contraste;
             float _Realce;
             CBUFFER_END
+            float _SolarDeathDarkness;
             TEXTURE2D(_MainTex);
             SAMPLER(sampler_MainTex);
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
@@ -49,6 +50,7 @@ Shader "CuboRush/BlackHoleVideo"
                 half3 cor = pow(max(color, 0.0h), _Contraste);
                 cor *= lerp(half3(1.0h, 0.86h, 0.80h), half3(1.0h, 1.0h, 1.0h), saturate(luz * 1.4h));
                 cor *= 0.88h + smoothstep(0.62h, 1.0h, luz) * _Realce;
+                cor *= lerp(half3(1.0h, 1.0h, 1.0h), half3(0.09h, 0.17h, 0.28h), saturate(_SolarDeathDarkness));
                 return half4(cor, alpha);
             }
             ENDHLSL

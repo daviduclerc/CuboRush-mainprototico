@@ -18,7 +18,7 @@ public sealed class PauseMenuUI : MonoBehaviour
     void Start()
     {
         jogo = GetComponent<GameManager>();
-        fonte = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        fonte = EstiloUI.Fonte;
         raiz = NovoRect("Menu de pausa", transform);
         Canvas canvas = raiz.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -109,8 +109,7 @@ public sealed class PauseMenuUI : MonoBehaviour
             colorMultiplier = 1f,
             fadeDuration = 0.12f
         };
-        var texto = CriarTexto(nome, rect, 22);
-        Preencher(texto.rectTransform);
+        MenuButtonLabel.Criar(rect, nome, 22, new Color(0.93f, 0.97f, 1f));
         return botao;
     }
 

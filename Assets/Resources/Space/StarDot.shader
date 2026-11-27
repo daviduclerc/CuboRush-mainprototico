@@ -2,7 +2,7 @@ Shader "CuboRush/StarDot"
 {
     SubShader
     {
-        Tags { "RenderPipeline"="UniversalPipeline" "Queue"="Transparent+90" "RenderType"="Transparent" }
+        Tags { "RenderPipeline"="UniversalPipeline" "Queue"="Transparent-490" "RenderType"="Transparent" }
         Pass
         {
             Tags { "LightMode"="SRPDefaultUnlit" }

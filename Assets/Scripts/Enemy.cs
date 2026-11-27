@@ -128,7 +128,7 @@ public class Enemy : MonoBehaviour
             float deslocX = i == 0 ? 0f : (i == 1 ? -largura : largura);
             miras[i] = Visual.Forma(PrimitiveType.Cube, "Mira", transform,
                 new Vector3(deslocX, -alturaVoo + 0.03f, -distancia / 2f),
-                new Vector3(0.6f, 0.02f, distancia), corAvisoBaixo, true, raio: 0f);
+                new Vector3(0.22f, 0.02f, distancia), corAvisoBaixo, true, raio: 0f);
             // Dividida no comprimento para deitar sobre a pista curvada.
             miras[i].GetComponent<MeshFilter>().sharedMesh = CurvaturaDaMalha.CuboSubdividido(32);
             miras[i].SetActive(false);

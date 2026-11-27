@@ -14,15 +14,15 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   ativado: 1
   gatilho: 0
-  intervaloAleatorio: {x: 28, y: 44}
+  intervaloAleatorio: {x: 18, y: 24}
   intervaloSegundos: 35
   intervaloPontos: 650
   avisoGeral: 2.4
   duracaoChuva: 12
-  intervaloOndas: 1.55
+  intervaloOndas: 1.4
   avisoNoPiso: 1.65
   duracaoBrasa: 0.75
-  meteorosPorOnda: 2
+  meteorosPorOnda: 3
   danoVida: 25
   intensidadeDoCeu: 0.28
   corAviso: {r: 1, g: 0.29, b: 0.08, a: 1}

@@ -5,6 +5,7 @@ Shader "CuboRush/ReflectiveTrack"
         _BaseColor ("Liga metalica", Color) = (0.22,0.24,0.28,1)
         _TexturaPiso ("Imagem do piso", 2D) = "black" {}
         _UsarTextura ("Usar imagem (0 = procedural)", Float) = 0
+        _AcabamentoVinilico ("Acabamento vinilico", Float) = 0
         _EscalaTextura ("Largura em metros que a imagem cobre", Float) = 10
         _AspectoTextura ("Altura/largura da imagem", Float) = 1
         _BrilhoTextura ("Brilho da imagem", Float) = 1
@@ -28,6 +29,7 @@ Shader "CuboRush/ReflectiveTrack"
             CBUFFER_START(UnityPerMaterial)
             half4 _BaseColor;
             float _UsarTextura;
+            float _AcabamentoVinilico;
             float _EscalaTextura;
             float _AspectoTextura;
             float _BrilhoTextura;
@@ -41,6 +43,8 @@ Shader "CuboRush/ReflectiveTrack"
             float4 _TrackSunPosition;
             half4 _TrackSunColor;
             float _TrackReflectionStrength;
+            float _SolarDeathTrackPulse;
+            float _SolarDeathDarkness;
             float4 _PistaFaixas;        // x = meia largura da pista | y = largura de cada faixa
             // ---------- Rachaduras do vidro (Voronoi com distância exata até a borda da célula) ----------
             float2 RachaHash22(float2 p)
@@ -106,6 +110,7 @@ Shader "CuboRush/ReflectiveTrack"
                 float distCamera=length(paraCamera);
                 float3 v=paraCamera/max(distCamera,0.0001);
                 float2 pm=i.malha.xy;
+                float vinil=saturate(_AcabamentoVinilico);
 
                 // Mármore/vidro escuro azul-ardósia, com manchas violeta mais claras (arte de referência).
                 float manchas=smoothstep(0.30,0.78,EstFbm2(pm*0.055+3.0));
@@ -117,7 +122,7 @@ Shader "CuboRush/ReflectiveTrack"
                 baseColor+=half3(0.03,0.08,0.26)*smoothstep(0.50,0.78,EstFbm2(pm*0.13+27.0))*0.12;
                 // Ondulação suave da superfície: deixa o espelho com cara de vidro de verdade.
                 float2 ondaVidro=float2(EstRuido2(pm*1.6),EstRuido2(pm*1.6+31.0))-0.5;
-                float3 nVidro=normalize(n+float3(ondaVidro.x,0.0,ondaVidro.y)*0.05);
+                float3 normalSuperficie=normalize(n+float3(ondaVidro.x,0.0,ondaVidro.y)*lerp(0.05,0.012,vinil));
 
                 // ---------- Imagem do piso (opcional) ----------
                 // Presa às coordenadas do mundo: anda junto com a pista, sem emendas entre os pedaços.
@@ -128,16 +133,22 @@ Shader "CuboRush/ReflectiveTrack"
                 // no comprimento ela repete mantendo a proporção original.
                 float larguraImagem=max(_EscalaTextura,0.1);
                 float2 uvImagem=float2((pm.x+_PistaFaixas.x)/larguraImagem,pm.y/(larguraImagem*max(_AspectoTextura,0.05)));
-                half3 imagemFixa=SAMPLE_TEXTURE2D(_TexturaPiso,sampler_TexturaPiso,uvImagem).rgb;
-                float2 direcaoFluxo=float2(EstFbm2(pm*0.04)-0.5,EstFbm2(pm*0.04+17.0)-0.5)*0.6;
-                float fase=_Time.y*_FluxoPiso;
-                float fase1=frac(fase);
-                float fase2=frac(fase+0.5);
-                half3 fluxoA=SAMPLE_TEXTURE2D(_TexturaPiso,sampler_TexturaPiso,uvImagem-direcaoFluxo*fase1).rgb;
-                half3 fluxoB=SAMPLE_TEXTURE2D(_TexturaPiso,sampler_TexturaPiso,uvImagem-direcaoFluxo*fase2+0.37).rgb;
-                half3 fluindo=lerp(fluxoA,fluxoB,abs(1.0-2.0*fase1));
-                float temFluxo=step(0.0001,_FluxoPiso)*_ForcaFluxo;
-                half3 imagem=lerp(imagemFixa,max(imagemFixa,fluindo),temFluxo)*_BrilhoTextura;
+                half3 imagem=SAMPLE_TEXTURE2D(_TexturaPiso,sampler_TexturaPiso,uvImagem).rgb;
+                if(_FluxoPiso>=0.0001 && _ForcaFluxo>0.0)
+                {
+                    float2 direcaoFluxo=float2(EstFbm2(pm*0.04)-0.5,EstFbm2(pm*0.04+17.0)-0.5)*0.6;
+                    float fase=_Time.y*_FluxoPiso;
+                    float fase1=frac(fase);
+                    float fase2=frac(fase+0.5);
+                    half3 fluxoA=SAMPLE_TEXTURE2D(_TexturaPiso,sampler_TexturaPiso,uvImagem-direcaoFluxo*fase1).rgb;
+                    half3 fluxoB=SAMPLE_TEXTURE2D(_TexturaPiso,sampler_TexturaPiso,uvImagem-direcaoFluxo*fase2+0.37).rgb;
+                    half3 fluindo=lerp(fluxoA,fluxoB,abs(1.0-2.0*fase1));
+                    imagem=lerp(imagem,max(imagem,fluindo),_ForcaFluxo);
+                }
+                imagem*=_BrilhoTextura;
+                // Dá contraste aos sulcos escuros, que continuam presos à superfície da pista.
+                half3 texturaVinil=half3(0.009,0.010,0.015)+imagem*half3(1.22,1.28,1.36);
+                imagem=lerp(imagem,texturaVinil,vinil);
                 baseColor=lerp(baseColor,imagem*(0.85+0.30*difusa),usarImagem);
 
                 // Rachaduras: rede angulosa de linhas claras, entortada por ruído para não parecer grade.
@@ -172,39 +183,40 @@ Shader "CuboRush/ReflectiveTrack"
                 float distLinhaFaixa=abs(kFaixa-round(kFaixa))*faixaPista;
                 float pertoBorda=saturate(1-(meiaPista-abs(i.malha.x))/(faixaPista*0.6));
                 half3 corEspalhada=lerp(half3(0.30,0.85,1.0),half3(0.62,0.32,1.0),pertoBorda);
-                baseColor+=corEspalhada*exp(-distLinhaFaixa/0.22)*0.32;
+                baseColor+=corEspalhada*exp(-distLinhaFaixa/0.22)*lerp(0.32,0.18,vinil);
                 float distancia=distance(i.world.xz,_TrackSunPosition.xz);
                 float proximidade=1-smoothstep(4,20,distancia);
                 float3 l=normalize(_TrackSunPosition.xyz-i.world+float3(0,0.2,0));
-                float especular=pow(saturate(dot(nVidro,normalize(l+v))),96);
-                baseColor+=_TrackSunColor.rgb*especular*proximidade*0.45;
+                float especular=pow(saturate(dot(normalSuperficie,normalize(l+v))),lerp(96,52,vinil));
+                baseColor+=_TrackSunColor.rgb*especular*proximidade*lerp(0.45,0.22,vinil);
                 float2 uv=i.reflexo.xy/max(i.reflexo.w,0.0001)*0.5+0.5;
                 // A ondulação do vidro entorta levemente o reflexo.
-                uv+=ondaVidro*0.004*longe;
+                uv+=ondaVidro*lerp(0.004,0.001,vinil)*longe;
                 // A captura URP em RenderTexture usa a origem superior no Direct3D.
                 #if UNITY_UV_STARTS_AT_TOP
                 uv.y=1-uv.y;
                 #endif
                 half3 reflexo=SAMPLE_TEXTURE2D(_TrackPlanarTexture,sampler_TrackPlanarTexture,uv).rgb;
-                half3 suavizado=SAMPLE_TEXTURE2D(_TrackPlanarTexture,sampler_TrackPlanarTexture,uv+_TrackPlanarTexel.xy).rgb;
-                suavizado+=SAMPLE_TEXTURE2D(_TrackPlanarTexture,sampler_TrackPlanarTexture,uv-_TrackPlanarTexel.xy).rgb;
-                reflexo=lerp(reflexo,suavizado*0.5,0.10);
+                float2 passoReflexo=_TrackPlanarTexel.xy*lerp(1.0,2.4,vinil);
+                half3 suavizado=SAMPLE_TEXTURE2D(_TrackPlanarTexture,sampler_TrackPlanarTexture,uv+passoReflexo).rgb;
+                suavizado+=SAMPLE_TEXTURE2D(_TrackPlanarTexture,sampler_TrackPlanarTexture,uv-passoReflexo).rgb;
+                reflexo=lerp(reflexo,suavizado*0.5,lerp(0.10,0.29,vinil));
                 float borda=smoothstep(0,0.025,uv.x)*smoothstep(0,0.025,uv.y)*(1-smoothstep(0.975,1,uv.x))*(1-smoothstep(0.975,1,uv.y));
                 float topo=smoothstep(0.8,0.98,n.y);
                 // O vidro espelha os objetos ao longo da pista toda; perto do Sol, com mais força.
                 // Sobre as rachaduras o espelho "quebra" um pouco.
                 float quebra=1.0-0.45*saturate(linhaGrande+linhaFina*0.5);
-                float forca=_TrackReflectionStrength*lerp(0.55,1.0,proximidade)*topo*borda*quebra;
+                float forca=_TrackReflectionStrength*lerp(0.55,1.0,proximidade)*topo*borda*quebra*lerp(1.0,0.65,vinil);
                 half3 cor=baseColor+reflexo*forca;
                 // Em ângulo rasante (lá longe) o vidro reflete o disco dourado do buraco negro.
                 float fresnel=pow(1.0-saturate(dot(n,v)),5.0);
                 float aoFundo=smoothstep(10.0,60.0,distCamera);
-                cor+=half3(1.0,0.52,0.18)*fresnel*(0.25+0.55*aoFundo)*0.55;
+                cor+=half3(1.0,0.52,0.18)*fresnel*(0.25+0.55*aoFundo)*lerp(0.55,0.31,vinil);
                 // Reflexo brilhante do disco do buraco negro, à frente e um pouco acima da pista.
-                float3 refletido=reflect(-v,nVidro);
+                float3 refletido=reflect(-v,normalSuperficie);
                 float3 paraBuracoNegro=normalize(float3(0.0,0.10,1.0));
                 float olhar=saturate(dot(refletido,paraBuracoNegro));
-                cor+=half3(1.0,0.62,0.25)*(pow(olhar,80.0)*0.45+pow(olhar,10.0)*0.05);
+                cor+=half3(1.0,0.62,0.25)*(pow(olhar,80.0)*0.45+pow(olhar,10.0)*0.05)*lerp(1.0,0.55,vinil);
 
                 // Malha do espaço-tempo: aparece só onde o piso está curvado.
                 float curvatura=saturate(abs(i.malha.z)*3.0);
@@ -216,6 +228,8 @@ Shader "CuboRush/ReflectiveTrack"
                 // O fundo do funil escurece, como a garganta de um buraco negro.
                 cor*=1-0.55*saturate(i.malha.z/0.6);
                 cor+=corMalha*linha*curvatura;
+                cor*=lerp(1.0,0.44,saturate(_SolarDeathDarkness));
+                cor+=half3(1.0,0.20,0.045)*saturate(_SolarDeathTrackPulse)*topo*proximidade*0.2;
                 return half4(cor,1);
             }
             ENDHLSL

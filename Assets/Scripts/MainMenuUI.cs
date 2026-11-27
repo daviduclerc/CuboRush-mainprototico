@@ -1,3 +1,4 @@
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -12,27 +13,34 @@ public sealed class MainMenuUI : MonoBehaviour
     const float TrocaDeCena = 1.84f;
     const float ChegadaNaPista = 4.24f;
     const float FimDaIntroducao = 4.82f;
+    const float ProporcaoDaArteDoMenu = 2f;
 
     GameManager jogo;
     Canvas canvas;
-    RectTransform raiz, segura, quadro, arte, principal, modal, cartao;
-    Text rodape, versao, tituloModal, volumeTexto, conteudo;
+    RectTransform raiz, segura, quadro, arte, principal, modal, sombraModal, cartao;
+    Text rodape, versao, tituloModal, tituloCompacto, volumeTexto, conteudo;
+    RectTransform painelHistorico;
+    NeonMenuGraphic molduraModal;
+    Text recordeHistorico;
+    readonly CartaoPartida[] cartoesPartida = new CartaoPartida[HistoricoPartidas.Capacidade];
     Button[] botoes = new Button[4];
-    Button voltar;
+    Button voltar, comecar;
     Slider volume;
     Toggle telaCheia;
     Font fonte;
     bool visivelAnterior;
     bool retrato;
+    Vector2 posicaoArte;
     string pagina = "";
     static readonly Color Ciano = new Color(0.25f, 0.9f, 1f);
     static readonly Color Ambar = new Color(1f, 0.65f, 0.15f);
+    static readonly CultureInfo FormatoBrasileiro = CultureInfo.GetCultureInfo("pt-BR");
     Image fundo;
     RawImage imagemFundo, sol, claridade;
     CanvasGroup grupoPrincipal;
     Material materialDisco, materialSol, materialClarao, materialRastro;
     bool emIntroducao;
-    float inicioDaIntroducao;
+    float inicioDaIntroducao, inicioDoMenu;
     CameraFollow cameraDaPista;
     GameplayHud hud;
     Transform solNaPista;
@@ -44,11 +52,17 @@ public sealed class MainMenuUI : MonoBehaviour
     static readonly Vector2 CentroBuracoNegro = new Vector2(0.69f, 0.494f);
     static readonly Vector2 SaidaDoSol = new Vector2(0.734f, 0.654f);
 
+    sealed class CartaoPartida
+    {
+        public NeonMenuGraphic moldura;
+        public Text resultado, pontos, detalhes;
+    }
+
     void Start()
     {
         jogo = GetComponent<GameManager>();
         hud = GetComponent<GameplayHud>();
-        fonte = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        fonte = EstiloUI.Fonte;
         GarantirEntradaUI();
         raiz = Rect("Menu inicial Supernova", transform);
         canvas = raiz.gameObject.AddComponent<Canvas>();
@@ -64,9 +78,10 @@ public sealed class MainMenuUI : MonoBehaviour
         segura = Rect("Area segura do menu", raiz);
         quadro = Rect("Composicao responsiva", segura);
         quadro.anchorMin = quadro.anchorMax = quadro.pivot = new Vector2(0.5f, 0.5f);
-        arte = Rect("Arte de abertura", quadro);
+        arte = Rect("Arte de abertura", raiz);
+        arte.SetAsFirstSibling();
         imagemFundo = arte.gameObject.AddComponent<RawImage>();
-        imagemFundo.texture = Resources.Load<Texture2D>("Menu/EclipseBackground");
+        imagemFundo.texture = Resources.Load<Texture2D>(BlackHoleBackdrop.CaminhoArteDoMenu);
         imagemFundo.raycastTarget = false;
         Shader shaderDisco = Resources.Load<Shader>("Menu/MenuEclipseDisk");
         if (shaderDisco != null && shaderDisco.isSupported)
@@ -75,9 +90,15 @@ public sealed class MainMenuUI : MonoBehaviour
             imagemFundo.material = materialDisco;
         }
         CriarSol();
+        sombraModal = Rect("Sombra das janelas", raiz);
+        Stretch(sombraModal);
+        sombraModal.SetSiblingIndex(arte.GetSiblingIndex() + 1);
+        sombraModal.gameObject.AddComponent<Image>().color = new Color(0.003f, 0.007f, 0.02f, 0.92f);
         principal = Rect("Botoes principais", quadro);
         Stretch(principal);
         grupoPrincipal = principal.gameObject.AddComponent<CanvasGroup>();
+        tituloCompacto = Texto("<color=#86DFFF>IMMINENCE OF A</color>\n<color=#FFC066>SUPERNOVA</color>",
+            principal, 36, Color.white);
         string[] nomes = { "JOGAR", "OPÇÕES", "CRÉDITOS", "SAIR" };
         for (int i = 0; i < nomes.Length; i++)
         {
@@ -105,12 +126,10 @@ public sealed class MainMenuUI : MonoBehaviour
         versao = Texto("VERSÃO " + Application.version, principal, 11, new Color(0.6f, 0.78f, 0.9f));
         modal = Rect("Janela de opcoes e creditos", quadro);
         Stretch(modal);
-        Image sombra = modal.gameObject.AddComponent<Image>();
-        sombra.color = new Color(0.003f, 0.007f, 0.02f, 0.92f);
         cartao = Rect("Painel holografico", modal);
         cartao.anchorMin = cartao.anchorMax = cartao.pivot = new Vector2(0.5f, 0.5f);
-        var moldura = cartao.gameObject.AddComponent<NeonMenuGraphic>();
-        moldura.color = Ciano;
+        molduraModal = cartao.gameObject.AddComponent<NeonMenuGraphic>();
+        molduraModal.color = Ciano;
         tituloModal = Texto("", cartao, 30, Ciano);
         volumeTexto = Texto("", cartao, 19, Color.white);
         volume = CriarSlider(cartao);
@@ -129,12 +148,16 @@ public sealed class MainMenuUI : MonoBehaviour
         conteudo = Texto("", cartao, 18, new Color(0.86f, 0.92f, 1f));
         conteudo.alignment = TextAnchor.UpperLeft;
         conteudo.horizontalOverflow = HorizontalWrapMode.Wrap;
+        CriarHistorico();
         voltar = Botao("VOLTAR", cartao, Ciano);
         voltar.onClick.AddListener(FecharJanela);
-        modal.gameObject.SetActive(false);
+        comecar = Botao("COMEÇAR", cartao, Ambar);
+        comecar.onClick.AddListener(ComecarPartida);
+        MostrarModal(false);
         CriarClarao();
         AtualizarLayout();
         AtualizarVisibilidade();
+        if (jogo.AbrirHistoricoNoInicio) Jogar();
     }
 
     void CriarSol()
@@ -143,7 +166,7 @@ public sealed class MainMenuUI : MonoBehaviour
         Texture2D fotosfera = Resources.Load<Texture2D>("Sol3D/Fotosfera");
         if (shader == null || !shader.isSupported || fotosfera == null) return;
 
-        RectTransform figura = Rect("Sol emergindo do buraco negro", quadro);
+        RectTransform figura = Rect("Sol emergindo do buraco negro", arte);
         figura.anchorMin = figura.anchorMax = figura.pivot = new Vector2(0.5f, 0.5f);
         sol = figura.gameObject.AddComponent<RawImage>();
         sol.raycastTarget = false;
@@ -241,21 +264,21 @@ public sealed class MainMenuUI : MonoBehaviour
         float zoom = Mathf.Lerp(1f, 1.85f, avanco);
         arte.localScale = Vector3.one * zoom;
         Vector2 foco = arte.rect.min + Vector2.Scale(tamanho, CentroBuracoNegro);
-        arte.anchoredPosition = -foco * (zoom - 1f) + Vector2.left * (tamanho.x * 0.175f * avanco);
+        arte.anchoredPosition = posicaoArte - foco * (zoom - 1f) + Vector2.left * (tamanho.x * 0.175f * avanco);
 
         float subida = Mathf.InverseLerp(0.60f, 1.76f, tempo);
         subida *= subida;
         Vector2 centroArte = Vector2.Lerp(new Vector2(0.665f, 0.41f), SaidaDoSol, subida);
-        Vector3 posicaoSol = arte.TransformPoint(arte.rect.min + Vector2.Scale(centroArte, tamanho));
+        Vector2 posicaoLocal = arte.rect.min + Vector2.Scale(centroArte, tamanho);
+        Vector3 posicaoSol = arte.TransformPoint(posicaoLocal);
         if (materialDisco != null)
             materialDisco.SetFloat("_Distorcao", Suave(0.60f, 1.68f, tempo));
         AtualizarClarao(tempo, posicaoSol);
         if (sol == null || tempo >= TrocaDeCena) return;
 
         float ladoSemZoom = tamanho.y * Mathf.Lerp(0.09f, 0.255f, subida);
-        float lado = ladoSemZoom * zoom;
-        sol.rectTransform.anchoredPosition = quadro.InverseTransformPoint(posicaoSol);
-        sol.rectTransform.sizeDelta = Vector2.one * lado;
+        sol.rectTransform.anchoredPosition = posicaoLocal;
+        sol.rectTransform.sizeDelta = Vector2.one * ladoSemZoom;
         sol.color = new Color(1f, 1f, 1f, Suave(0.65f, 0.94f, tempo));
         materialSol.SetVector("_Center", new Vector4(centroArte.x, centroArte.y, 0f, 0f));
         materialSol.SetVector("_Size", new Vector4(ladoSemZoom / Mathf.Max(1f, tamanho.x),
@@ -369,7 +392,7 @@ public sealed class MainMenuUI : MonoBehaviour
         AtualizarVisibilidade();
         if (!raiz.gameObject.activeSelf) return;
         AtualizarLayout();
-        if (materialDisco != null) materialDisco.SetFloat("_Clock", Time.unscaledTime);
+        if (materialDisco != null) materialDisco.SetFloat("_Clock", Time.unscaledTime - inicioDoMenu);
         if (emIntroducao) AtualizarIntroducao(Time.unscaledTime - inicioDaIntroducao);
     }
 
@@ -379,6 +402,7 @@ public sealed class MainMenuUI : MonoBehaviour
         raiz.gameObject.SetActive(visivel);
         if (visivel && !visivelAnterior)
         {
+            inicioDoMenu = Time.unscaledTime;
             fundo.color = new Color(0.003f, 0.005f, 0.015f, 1f);
             imagemFundo.gameObject.SetActive(true);
             imagemFundo.color = Color.white;
@@ -391,7 +415,7 @@ public sealed class MainMenuUI : MonoBehaviour
             grupoPrincipal.interactable = grupoPrincipal.blocksRaycasts = true;
             pagina = "";
             principal.gameObject.SetActive(true);
-            modal.gameObject.SetActive(false);
+            MostrarModal(false);
             rodape.text = "RECORDE  " + jogo.Recorde + "     •     MOEDAS  " + jogo.MoedasTotal;
             botoes[0].Select();
         }
@@ -412,10 +436,17 @@ public sealed class MainMenuUI : MonoBehaviour
         retrato = aw / Mathf.Max(1, ah) < 1.1f;
         Vector2 design = retrato ? new Vector2(720, 1024) : new Vector2(1280, 720);
         quadro.sizeDelta = design;
-        quadro.localScale = Vector3.one * Mathf.Max(0.001f, Mathf.Min(aw / design.x, ah / design.y));
-        Pos(arte, new Vector2(0.5f, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(design.x, design.x * 9f / 16));
+        float escalaLayout = Mathf.Max(0.001f, Mathf.Min(aw / design.x, ah / design.y));
+        quadro.localScale = Vector3.one * escalaLayout;
+        PosicionarArte();
+        Vector2 expansao = retrato ? Vector2.zero : Vector2.Max(Vector2.zero,
+            (new Vector2(aw, ah) / escalaLayout - design) * 0.5f);
+        principal.offsetMin = -expansao;
+        principal.offsetMax = expansao;
+        tituloCompacto.gameObject.SetActive(retrato);
         if (retrato)
         {
+            Top(tituloCompacto.rectTransform, 58f, 110f, 620f);
             for (int i = 0; i < botoes.Length; i++)
                 Pos((RectTransform)botoes[i].transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
                     new Vector2(0f, -467f - i * 110f), new Vector2(i == 0 ? 420f : 390f, i == 0 ? 82f : 66f));
@@ -438,19 +469,54 @@ public sealed class MainMenuUI : MonoBehaviour
             Pos(versao.rectTransform, new Vector2(0.177f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(0f, 33f), new Vector2(300f, 18f));
         }
-        cartao.sizeDelta = new Vector2(600, retrato ? 650 : 570);
+        bool historico = pagina == "historico";
+        cartao.sizeDelta = new Vector2(600, historico ? 455 : retrato ? 650 : 570);
+        cartao.anchoredPosition = historico ? Vector2.up * 24f : Vector2.zero;
         Top(tituloModal.rectTransform, 18, 44, 540);
         Top(volumeTexto.rectTransform, 85, 28, 500);
         Top((RectTransform)volume.transform, 124, 28, 440);
         Top((RectTransform)telaCheia.transform, 174, 36, 500);
-        Top(conteudo.rectTransform, pagina == "creditos" ? 100 : 235, pagina == "creditos" ? 340 : (retrato ? 285 : 250), 500);
-        Pos((RectTransform)voltar.transform, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 25), new Vector2(240, 42));
+        Top(conteudo.rectTransform, pagina == "creditos" ? 100 : 235,
+            pagina == "creditos" ? 340 : retrato ? 285 : 250, 500);
+        Pos((RectTransform)voltar.transform, new Vector2(0.5f, 0), new Vector2(0.5f, 0),
+            new Vector2(historico ? -127f : 0f, 25), new Vector2(240, 42));
+        Pos((RectTransform)comecar.transform, new Vector2(0.5f, 0), new Vector2(0.5f, 0),
+            new Vector2(127f, 25), new Vector2(240, 42));
+    }
+
+    void PosicionarArte()
+    {
+        Vector2 area = Vector2.Max(Vector2.one, raiz.rect.size);
+        // A composição original usa 2:1, independente da resolução importada da textura.
+        float altura = Mathf.Max(area.y, area.x / ProporcaoDaArteDoMenu);
+        Vector2 tamanho = new Vector2(altura * ProporcaoDaArteDoMenu, altura);
+        Vector2 margem = Vector2.Max(Vector2.zero, (tamanho - area) * 0.5f);
+        float recuo = retrato
+            ? Mathf.Clamp((0.5f - CentroBuracoNegro.x) * tamanho.x, -margem.x, margem.x)
+            : margem.x * 0.82f;
+
+        // A arte cobre todo o Canvas. A área segura serve só aos controles.
+        posicaoArte = new Vector2(recuo, -margem.y);
+        var centro = new Vector2(0.5f, 0.5f);
+        Pos(arte, centro, centro, posicaoArte, tamanho);
     }
 
     public void Jogar()
     {
         if (jogo == null || jogo.Estado != EstadoJogo.Menu || emIntroducao || pagina != "") return;
-        PlayerPrefs.Save();
+        Abrir("historico", "HISTÓRICO DE PARTIDAS");
+        volume.gameObject.SetActive(false);
+        volumeTexto.gameObject.SetActive(false);
+        telaCheia.gameObject.SetActive(false);
+        AtualizarHistorico();
+        AtualizarLayout();
+        comecar.Select();
+    }
+
+    void ComecarPartida()
+    {
+        if (jogo.Estado != EstadoJogo.Menu || emIntroducao || pagina != "historico") return;
+        FecharJanela();
         emIntroducao = true;
         inicioDaIntroducao = Time.unscaledTime;
         grupoPrincipal.interactable = grupoPrincipal.blocksRaycasts = false;
@@ -485,8 +551,85 @@ public sealed class MainMenuUI : MonoBehaviour
     {
         pagina = qual;
         principal.gameObject.SetActive(false);
-        modal.gameObject.SetActive(true);
+        MostrarModal(true);
         tituloModal.text = titulo;
+        bool historico = qual == "historico";
+        molduraModal.Configurar(new Color(0.015f, 0.025f, 0.065f, 0.92f), 1.5f, historico ? 0.07f : 0.23f);
+        conteudo.gameObject.SetActive(!historico);
+        painelHistorico.gameObject.SetActive(historico);
+        comecar.gameObject.SetActive(historico);
+    }
+
+    void CriarHistorico()
+    {
+        painelHistorico = Rect("Histórico de partidas", cartao);
+        Stretch(painelHistorico);
+        recordeHistorico = Texto("", painelHistorico, 15, EstiloUI.Ouro);
+        Top(recordeHistorico.rectTransform, 63f, 24f, 520f);
+        Text meta = Texto($"META   {GameManager.MetaMoedas} MOEDAS   ·   {GameManager.MetaPontos.ToString("N0", FormatoBrasileiro)} PONTOS   ·   {GameManager.MetaRaids} RAIDS DE METEOROS",
+            painelHistorico, 13, EstiloUI.TextoSuave);
+        Top(meta.rectTransform, 355f, 24f, 520f);
+
+        string[] ordem = { "MAIS RECENTE", "2ª MAIS RECENTE", "3ª MAIS RECENTE" };
+        Vector2 topoEsquerdo = new Vector2(0f, 1f);
+        Vector2 topoDireito = Vector2.one;
+        for (int i = 0; i < cartoesPartida.Length; i++)
+        {
+            RectTransform rect = Rect(ordem[i], painelHistorico);
+            Top(rect, 102f + i * 84f, 74f, 526f);
+            var ficha = new CartaoPartida();
+            ficha.moldura = rect.gameObject.AddComponent<NeonMenuGraphic>();
+            ficha.moldura.Configurar(new Color(0.019f, 0.032f, 0.062f, 0.96f), 1.3f, 0.10f);
+            ficha.moldura.raycastTarget = false;
+
+            Text posicao = Texto(ordem[i], rect, 12, EstiloUI.TextoSuave);
+            posicao.alignment = TextAnchor.MiddleLeft;
+            Pos(posicao.rectTransform, topoEsquerdo, topoEsquerdo, new Vector2(18f, -9f), new Vector2(245f, 18f));
+            ficha.pontos = Texto("", rect, 23, Color.white);
+            ficha.pontos.alignment = TextAnchor.MiddleLeft;
+            Pos(ficha.pontos.rectTransform, topoEsquerdo, topoEsquerdo, new Vector2(18f, -31f), new Vector2(270f, 31f));
+            ficha.resultado = Texto("", rect, 17, Color.white);
+            ficha.resultado.alignment = TextAnchor.MiddleRight;
+            Pos(ficha.resultado.rectTransform, topoDireito, topoDireito, new Vector2(-18f, -7f), new Vector2(205f, 27f));
+            ficha.detalhes = Texto("", rect, 13, EstiloUI.TextoSuave);
+            ficha.detalhes.alignment = TextAnchor.MiddleRight;
+            Pos(ficha.detalhes.rectTransform, topoDireito, topoDireito, new Vector2(-18f, -41f), new Vector2(225f, 20f));
+            cartoesPartida[i] = ficha;
+        }
+        painelHistorico.gameObject.SetActive(false);
+    }
+
+    void AtualizarHistorico()
+    {
+        recordeHistorico.text = $"RECORDE   {jogo.Recorde.ToString("N0", FormatoBrasileiro)} PONTOS";
+        for (int i = 0; i < cartoesPartida.Length; i++)
+        {
+            CartaoPartida ficha = cartoesPartida[i];
+            PartidaSalva partida = jogo.PartidaNoHistorico(i);
+            if (partida == null)
+            {
+                ficha.pontos.text = "Sem partida salva";
+                ficha.pontos.color = EstiloUI.TextoSuave;
+                ficha.resultado.text = ficha.detalhes.text = "";
+                ficha.moldura.color = new Color(0.17f, 0.28f, 0.40f);
+                continue;
+            }
+
+            (string rotulo, Color cor) = partida.resultado switch
+            {
+                ResultadoPartida.Vitoria => ("VITÓRIA", EstiloUI.Verde),
+                ResultadoPartida.Derrota => ("DERROTA", EstiloUI.Perigo),
+                _ => ("INTERROMPIDA", Ambar)
+            };
+            ficha.resultado.text = rotulo;
+            ficha.resultado.color = cor;
+            ficha.moldura.color = Color.Lerp(EstiloUI.FundoPainel, cor, 0.65f);
+            ficha.pontos.text = $"{partida.pontos.ToString("N0", FormatoBrasileiro)} PONTOS";
+            ficha.pontos.color = Color.white;
+            int quantidade = partida.usaRaids ? partida.raids : partida.ondas;
+            string unidade = partida.usaRaids ? "RAIDS" : "ONDAS";
+            ficha.detalhes.text = $"MOEDAS {partida.moedas.ToString("N0", FormatoBrasileiro)}   ·   {unidade} {quantidade.ToString("N0", FormatoBrasileiro)}";
+        }
     }
 
     public void FecharJanela()
@@ -494,8 +637,14 @@ public sealed class MainMenuUI : MonoBehaviour
         PlayerPrefs.Save();
         pagina = "";
         principal.gameObject.SetActive(true);
-        modal.gameObject.SetActive(false);
+        MostrarModal(false);
         botoes[0].Select();
+    }
+
+    void MostrarModal(bool mostrar)
+    {
+        sombraModal.gameObject.SetActive(mostrar);
+        modal.gameObject.SetActive(mostrar);
     }
 
     void AplicarVolume(float valor)
@@ -524,8 +673,8 @@ public sealed class MainMenuUI : MonoBehaviour
         b.targetGraphic = graphic;
         b.colors = new ColorBlock { normalColor = cor * 0.85f, highlightedColor = Color.Lerp(cor, Color.white, 0.45f),
             pressedColor = Color.white, selectedColor = cor, disabledColor = Color.gray, colorMultiplier = 1f, fadeDuration = 0.12f };
-        Text label = Texto(nome, rect, 23, Color.white);
-        Stretch(label.rectTransform);
+        Text label = MenuButtonLabel.Criar(rect, nome, 23, Color.white);
+        AdicionarSombra(label);
         return b;
     }
 
@@ -564,8 +713,15 @@ public sealed class MainMenuUI : MonoBehaviour
         text.text = valor; text.color = cor; text.alignment = TextAnchor.MiddleCenter;
         text.horizontalOverflow = HorizontalWrapMode.Wrap; text.verticalOverflow = VerticalWrapMode.Truncate;
         text.raycastTarget = false;
-        var shadow = text.gameObject.AddComponent<Shadow>(); shadow.effectColor = new Color(0, 0, 0, 0.95f); shadow.effectDistance = new Vector2(1.5f, -1.5f);
+        AdicionarSombra(text);
         return text;
+    }
+
+    static void AdicionarSombra(Text texto)
+    {
+        var sombra = texto.gameObject.AddComponent<Shadow>();
+        sombra.effectColor = new Color(0f, 0f, 0f, 0.95f);
+        sombra.effectDistance = new Vector2(1.5f, -1.5f);
     }
 
     static Image Image(string nome, Transform pai, Color cor)

@@ -98,7 +98,7 @@ public class ObstacleSpawner : MonoBehaviour
     void Update()
     {
         GameManager jogo = GameManager.Instancia;
-        if (jogo == null || jogador == null) return;
+        if (jogo == null || jogador == null || jogo.EmResultado) return;
 
         bool vinhaJogando = estadoAnterior == EstadoJogo.Jogando;
         bool retomando = estadoAnterior == EstadoJogo.Pausado && jogo.Estado == EstadoJogo.Jogando;
@@ -175,7 +175,7 @@ public class ObstacleSpawner : MonoBehaviour
 
             if (!jogando) continue;
 
-            // Estilingue gravitacional: avalia a passagem quando o Sol chega na altura do planeta.
+            // Estilingue gravitacional: avalia a passagem quando o Sol chega ao lado do asteroide.
             if (item.tipo == TipoItem.Estilingue)
             {
                 if (!item.atravessado && t.position.z <= zJogador)
@@ -203,9 +203,12 @@ public class ObstacleSpawner : MonoBehaviour
             if (item.meteoroCaindo)
             {
                 Vector3 p = t.position;
+                bool noAr = p.y > item.alturaAlvoMeteoro;
                 p.y = Mathf.MoveTowards(p.y, item.alturaAlvoMeteoro,
                     item.velocidadeQuedaMeteoro * Time.deltaTime);
                 t.position = p;
+                if (noAr && p.y <= item.alturaAlvoMeteoro && t.TryGetComponent(out TrailRenderer fogo))
+                    fogo.emitting = false;
             }
 
             // Projétil: desce até a altura do cubo e voa contra o jogador.
@@ -420,7 +423,7 @@ public class ObstacleSpawner : MonoBehaviour
             CriarMoedas(Random.Range(0, Faixas), zMeio, Obst.Nenhum, vel);
         }
 
-        // Planeta ou estrela ao lado da pista para o estilingue gravitacional.
+        // Asteroide ao lado da pista para o estilingue gravitacional.
         if (jogo.TempoDeJogo >= inicioEstilingue && zMeio >= proximoEstilingueZ)
         {
             CriarEstilingue(zMeio);
@@ -522,40 +525,41 @@ public class ObstacleSpawner : MonoBehaviour
                 // Lâmina alta: do vão de 0,65 para cima. Só passa deslizando.
                 tamanho = new Vector3(0.9f, 1.9f, 0.35f);
                 alturaVoo = 0.65f + tamanho.y / 2f;
+                Color violeta = new Color(0.65f, 0.3f, 1f);
                 obj = Visual.Forma(PrimitiveType.Cube, "ProjetilAlto", transform,
-                    origem, tamanho, new Color(0.65f, 0.3f, 1f), true);
+                    origem, tamanho, violeta * 0.75f, raio: 0f);
+                for (int lado = -1; lado <= 1; lado += 2)
+                    Visual.Forma(PrimitiveType.Cube, "Friso da barreira", obj.transform,
+                        new Vector3(0f, lado * 0.48f, -0.50f), new Vector3(0.96f, 0.030f, 0.16f),
+                        violeta, true, raio: 0f);
                 break;
 
             case TipoProjetil.Rapido:
                 tamanho = Vector3.one * 0.42f;
                 velocidade *= 1.7f;
-                obj = Visual.Forma(PrimitiveType.Sphere, "ProjetilRapido", transform,
-                    origem, tamanho, new Color(1f, 0.9f, 0.2f), true);
+                obj = CriarTiroLuminoso("ProjetilRapido", origem, tamanho, new Color(1f, 0.9f, 0.2f));
                 // Rastro esticado para passar a ideia de velocidade.
                 Visual.Forma(PrimitiveType.Cube, "Rastro", obj.transform,
-                    new Vector3(0f, 0f, 1.6f), new Vector3(0.35f, 0.35f, 2.4f), new Color(1f, 0.9f, 0.2f), true, raio: 0f);
+                    new Vector3(0f, 0f, 1.6f), new Vector3(0.18f, 0.18f, 2.4f), new Color(1f, 0.9f, 0.2f), true, raio: 0f);
                 break;
 
             case TipoProjetil.Onda:
                 tamanho = Vector3.one * 0.55f;
-                obj = Visual.Forma(PrimitiveType.Sphere, "ProjetilOnda", transform,
-                    origem, tamanho, new Color(1f, 0.3f, 0.8f), true);
+                obj = CriarTiroLuminoso("ProjetilOnda", origem, tamanho, new Color(1f, 0.3f, 0.8f));
                 break;
 
             case TipoProjetil.Teleguiado:
                 tamanho = Vector3.one * 0.6f;
                 velocidade *= 0.8f;
-                obj = Visual.Forma(PrimitiveType.Sphere, "ProjetilTeleguiado", transform,
-                    origem, tamanho, new Color(0.5f, 1f, 0.95f), true);
+                obj = CriarTiroLuminoso("ProjetilTeleguiado", origem, tamanho, new Color(0.5f, 1f, 0.95f));
                 // Anel em volta para diferenciar dos outros.
                 Visual.Forma(PrimitiveType.Cube, "Anel", obj.transform,
-                    Vector3.zero, new Vector3(1.7f, 0.15f, 1.7f), new Color(0.5f, 1f, 0.95f), true);
+                    Vector3.zero, new Vector3(1.7f, 0.075f, 1.7f), new Color(0.5f, 1f, 0.95f), true, raio: 0f);
                 break;
 
             default:
                 tamanho = Vector3.one * 0.55f;
-                obj = Visual.Forma(PrimitiveType.Sphere, "Projetil", transform,
-                    origem, tamanho, new Color(1f, 0.1f, 0.15f), true);
+                obj = CriarTiroLuminoso("Projetil", origem, tamanho, new Color(1f, 0.1f, 0.15f));
                 break;
         }
 
@@ -575,6 +579,14 @@ public class ObstacleSpawner : MonoBehaviour
             item.perseguicao = 2.5f;
             item.girar = true;
         }
+    }
+
+    GameObject CriarTiroLuminoso(string nome, Vector3 origem, Vector3 tamanho, Color cor)
+    {
+        GameObject tiro = Visual.Forma(PrimitiveType.Sphere, nome, transform, origem, tamanho, cor * 0.82f);
+        Visual.Forma(PrimitiveType.Sphere, "Ponta luminosa", tiro.transform,
+            new Vector3(0f, 0f, -0.41f), new Vector3(0.37f, 0.37f, 0.23f), cor, true);
+        return tiro;
     }
 
     /// <summary>
@@ -702,14 +714,14 @@ public class ObstacleSpawner : MonoBehaviour
         if (livres.Count == 0) return;
 
         int faixaEscolhida = livres[Random.Range(0, livres.Count)];
-        Color brasa = new Color(1f, 0.24f, 0.055f);
-        GameObject meteoro = PolyhedronVisual.Criar("MeteoroEmQueda", transform,
-            new Vector3(jogador.PosicaoXDaFaixa(faixaEscolhida), 6.5f, z),
-            new Vector3(0.92f, 0.78f, 0.92f), 5, brasa);
+        var meteoro = new GameObject("MeteoroEmQueda");
+        meteoro.transform.SetParent(transform, false);
+        meteoro.transform.localPosition = new Vector3(jogador.PosicaoXDaFaixa(faixaEscolhida), 6.5f, z);
+        meteoro.transform.localScale = new Vector3(0.92f, 0.78f, 0.92f);
         meteoro.transform.localRotation = Random.rotation;
-        Visual.Forma(PrimitiveType.Sphere, "BrasaDoMeteoro", meteoro.transform,
-            new Vector3(0f, 0.45f, 0.02f), Vector3.one * 0.42f,
-            new Color(1f, 0.78f, 0.18f), true);
+        MeteorImpact.AdicionarCorpoRochoso(meteoro, 0.62f);
+        MeteorImpact.AdicionarRastro(meteoro, 0.61f, 0.27f);
+        meteoro.AddComponent<PolyhedronHitShape>().Inicializar(5, FormaObstaculo.Regular);
         TrackItem item = Registrar(meteoro, TipoItem.Obstaculo, new Vector3(0.82f, 0.82f, 0.82f));
         item.meteoroCaindo = true;
         item.velocidadeQuedaMeteoro = Random.Range(7f, 9f);
@@ -732,7 +744,7 @@ public class ObstacleSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// O Sol passou pelo planeta: na faixa da borda daquele lado ganha o impulso completo;
+    /// O Sol passou pelo asteroide: na faixa da borda daquele lado ganha o impulso completo;
     /// uma faixa mais para dentro ganha um impulso menor.
     /// </summary>
     void AvaliarEstilingue(TrackItem item, GameManager jogo)

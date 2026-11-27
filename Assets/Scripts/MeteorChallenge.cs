@@ -21,7 +21,7 @@ public sealed class MeteorChallenge : MonoBehaviour
     float proximoGatilho, fimDaFase, proximaOnda, proximoAlvoZ, ultimoImpacto;
     int faixaSegura;
     Bounds caixaAnterior;
-    bool pausado;
+    bool pausado, houveImpacto;
     CanvasGroup grupoAviso;
     RectTransform areaSegura, painel;
     Image progresso;
@@ -115,6 +115,7 @@ public sealed class MeteorChallenge : MonoBehaviour
     void IniciarAlerta(float agora)
     {
         fase = Fase.Alerta;
+        houveImpacto = false;
         fimDaFase = agora + Mathf.Max(0.8f, configuracao.avisoGeral);
         faixaSegura = sorteio.Next(jogador.quantidadeFaixas);
         proximoAlvoZ = jogador.transform.position.z;
@@ -138,10 +139,11 @@ public sealed class MeteorChallenge : MonoBehaviour
             MeteorImpact meteoro = meteoros[i];
             if (meteoro == null || !meteoro.Atualizar(agora, caixaAnterior, atual, out bool impacto, out bool acertou))
             {
-                if (meteoro != null) Destroy(meteoro.gameObject);
                 meteoros.RemoveAt(i);
+                if (meteoro != null) Destroy(meteoro.gameObject);
                 continue;
             }
+            houveImpacto |= impacto;
             if (impacto && agora - ultimoImpacto > 0.22f)
             {
                 float distancia = Mathf.Abs(meteoro.Alvo.z - jogador.transform.position.z);
@@ -154,7 +156,18 @@ public sealed class MeteorChallenge : MonoBehaviour
             }
             if (acertou && AplicarDano()) break;
         }
-        if (jogo.Estado != EstadoJogo.Jogando || (agora >= fimDaFase && meteoros.Count == 0)) Encerrar();
+        if (jogo.Estado != EstadoJogo.Jogando)
+        {
+            Encerrar();
+            return;
+        }
+        if (agora < fimDaFase || meteoros.Count != 0) return;
+
+        Encerrar();
+        if (!houveImpacto) return;
+        jogo.RegistrarRaidDeMeteoros();
+        if (jogo.Estado == EstadoJogo.Jogando && jogo.RaidsSuperadas <= GameManager.MetaRaids)
+            GameplayHud.Avisar("RAID SUPERADA", $"{jogo.RaidsSuperadas}/{GameManager.MetaRaids} raids de meteoros", EstiloUI.Ciano);
     }
 
     bool AplicarDano()
@@ -188,8 +201,9 @@ public sealed class MeteorChallenge : MonoBehaviour
             faixasSorteaveis.RemoveAt(indice);
             var alvo = new Vector3(jogador.PosicaoXDaFaixa(faixa), 0f, z);
             var entrada = alvo + new Vector3((float)(sorteio.NextDouble() * 14.0 - 7.0), 14f + i, 24f + i * 4f);
-            meteoros.Add(MeteorImpact.Criar(transform, configuracao.visualMeteoro, alvo, entrada,
-                agora, agora + atraso, Mathf.Max(0.1f, configuracao.duracaoBrasa), raio));
+            MeteorImpact meteoro = MeteorImpact.Criar(transform, configuracao.visualMeteoro, alvo, entrada,
+                agora, agora + atraso, Mathf.Max(0.1f, configuracao.duracaoBrasa), raio);
+            meteoros.Add(meteoro);
         }
     }
 
@@ -234,7 +248,7 @@ public sealed class MeteorChallenge : MonoBehaviour
     Text CriarTexto(string nome, int tamanho, Vector2 minimo, Vector2 maximo)
     {
         var texto = Rect(nome, painel, minimo, maximo).gameObject.AddComponent<Text>();
-        texto.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        texto.font = EstiloUI.Fonte;
         texto.fontStyle = FontStyle.Bold;
         texto.fontSize = tamanho;
         texto.resizeTextForBestFit = true;
@@ -259,7 +273,7 @@ public sealed class MeteorChallenge : MonoBehaviour
         float pulso = alerta ? 0.5f + Mathf.Sin(agora * 10f) * 0.5f : 1f;
         grupoAviso.alpha = Mathf.Lerp(0.66f, 1f, pulso);
         painel.localScale = Vector3.one * Mathf.Lerp(1f, 1.025f, alerta ? pulso : 0f);
-        titulo.text = alerta ? "ALERTA: CHUVA DE METEOROS!" : "DESAFIO DOS METEOROS";
+        titulo.text = alerta ? "ALERTA: CHUVA DE METEOROS!" : "RAID DE METEOROS";
         titulo.color = progresso.color = configuracao.corAviso;
         orientacao.text = alerta ? "Prepare-se para desviar dos alvos no piso" : "Desvie dos alvos marcados";
         float total = alerta ? Mathf.Max(0.8f, configuracao.avisoGeral) : Mathf.Max(1f, configuracao.duracaoChuva);

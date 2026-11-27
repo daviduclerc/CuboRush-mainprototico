@@ -21,7 +21,7 @@ public class AtracaoDoBuracoNegro : MonoBehaviour
     [Range(1f, 5f)] public float estiramento = 2.6f;
     [Tooltip("Espessura no limite (1 = não afina).")]
     [Range(0.1f, 1f)] public float afinamento = 0.4f;
-    [Tooltip("Giro em espiral (graus) dos asteroides e cristais sendo puxados, como num disco de acreção.")]
+    [Tooltip("Giro em espiral (graus) dos asteroides sendo puxados, como num disco de acreção.")]
     public float giroEspiral = 75f;
 
     /// <summary>Como um objeto aparece neste quadro.</summary>
@@ -108,13 +108,11 @@ public class AtracaoDoBuracoNegro : MonoBehaviour
             cameraSeguir = FindAnyObjectByType<CameraFollow>();
             buraco = FindAnyObjectByType<BlackHoleBackdrop>();
         }
-        Vector3 deslocamentoCamera = cameraSeguir != null ? cameraSeguir.deslocamento : new Vector3(0f, 4.2f, -6f);
-        float acompanhamento = cameraSeguir != null ? cameraSeguir.acompanhamentoLateral : 0.35f;
+        Vector3 camera = cameraSeguir != null ? cameraSeguir.PosicaoDaCorrida(posicaoJogador.z) :
+            new Vector3(0f, 4.2f, posicaoJogador.z - 6f);
         float elevacao = buraco != null ? buraco.elevacao : 5f;
 
-        float xCamera = posicaoJogador.x * acompanhamento + deslocamentoCamera.x;
-        float zCamera = posicaoJogador.z + deslocamentoCamera.z;
-        float y = deslocamentoCamera.y + Mathf.Tan(elevacao * Mathf.Deg2Rad) * Mathf.Max(0f, z - zCamera);
-        return new Vector3(xCamera, y, z);
+        float y = camera.y + Mathf.Tan(elevacao * Mathf.Deg2Rad) * Mathf.Max(0f, z - camera.z);
+        return new Vector3(camera.x, y, z);
     }
 }

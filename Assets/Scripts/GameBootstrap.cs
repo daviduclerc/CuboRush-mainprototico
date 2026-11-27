@@ -83,12 +83,14 @@ public static class GameBootstrap
         // Referência distante para dar escala ao cenário espacial.
         BlackHoleBackdrop buracoNegro = new GameObject("CenarioEspacial").AddComponent<BlackHoleBackdrop>();
         buracoNegro.jogador = cubo.transform;
+        buracoNegro.elevacao = -1.5f;
+        buracoNegro.escalaDoFundo = 0.55f;
 
         // Limite de visão gravitacional: ao longe, os objetos são puxados, esticados e engolidos
         // pelo buraco negro, e se soltam conforme o jogador se aproxima (ajustável no Inspector).
         new GameObject("AtracaoDoBuracoNegro").AddComponent<AtracaoDoBuracoNegro>();
 
-        // Asteroides com contraluz do buraco negro e cristais flutuando dos dois lados da pista.
+        // Asteroides com contraluz do buraco negro dos dois lados da pista.
         CampoDeAsteroides asteroides = new GameObject("CampoDeAsteroides").AddComponent<CampoDeAsteroides>();
         asteroides.jogador = cubo.transform;
         asteroides.meiaLarguraPista = QuantidadeFaixas * LarguraFaixa / 2f;
@@ -148,7 +150,7 @@ public static class GameBootstrap
         RenderSettings.ambientLight = new Color(0.055f, 0.065f, 0.085f);
         RenderSettings.ambientIntensity = 0.7f;
         Light luzPrincipal = null;
-        Light[] luzes = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
+        Light[] luzes = Object.FindObjectsByType<Light>();
         foreach (Light luz in luzes)
             if (luz.type == LightType.Directional) { luzPrincipal = luz; break; }
         if (luzPrincipal == null)

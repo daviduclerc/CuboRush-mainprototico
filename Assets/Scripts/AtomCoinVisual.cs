@@ -12,7 +12,7 @@ public sealed class AtomCoinVisual : MonoBehaviour
     int corId;
     bool coletando;
     float elevacaoVisual;
-    const float TamanhoMoeda = 1.16f;
+    const float TamanhoMoeda = 0.91f;
 
     public static GameObject Criar(Transform pai, Vector3 posicao, int cor)
     {

@@ -3,13 +3,16 @@ using UnityEngine;
 /// <summary>Uma queda telegrafada. Alvo, movimento e colisão usam o mesmo ponto de impacto.</summary>
 public sealed class MeteorImpact : MonoBehaviour
 {
-    static Mesh malhaRochosa;
+    static readonly Mesh[] Rochas = new Mesh[5];
+    static int proximaRocha;
     static Material materialRocha, materialAlvo, materialRastro, materialParticulas;
     MaterialPropertyBlock propriedades;
     Vector3 entrada, posicaoAnterior;
     float inicio, chegada, fimDaBrasa, raio;
     bool emSolo, acertouSol;
     Transform corpo;
+    Vector3 eixoDeGiro;
+    Quaternion rotacaoInicial;
     Renderer marca;
     TrailRenderer rastro;
     ParticleSystem faiscas, fumaca, impacto;
@@ -35,36 +38,25 @@ public sealed class MeteorImpact : MonoBehaviour
     void CriarVisual(GameObject visual)
     {
         propriedades = new MaterialPropertyBlock();
-        if (materialRocha == null) materialRocha = MaterialDe("Gameplay/MeteorRock");
         if (materialAlvo == null) materialAlvo = MaterialDe("Gameplay/MeteorTarget");
-        if (materialRastro == null) materialRastro = MaterialDe("Space/ShootingStar");
         if (materialParticulas == null) materialParticulas = MaterialDe("Gameplay/MeteorParticle");
-        if (malhaRochosa == null) malhaRochosa = CriarRocha();
 
         GameObject objeto = new GameObject("Corpo rochoso");
         corpo = objeto.transform;
         corpo.SetParent(transform, false);
         corpo.position = entrada;
+        eixoDeGiro = new Vector3(0.38f + Mathf.Sin(entrada.x * 0.53f) * 0.32f, 0.82f, -0.33f).normalized;
+        rotacaoInicial = Quaternion.AngleAxis(entrada.z * 11f, Vector3.up);
+        corpo.localRotation = rotacaoInicial;
         if (visual != null) Instantiate(visual, corpo, false);
-        else
-        {
-            objeto.AddComponent<MeshFilter>().sharedMesh = malhaRochosa;
-            objeto.AddComponent<MeshRenderer>().sharedMaterial = materialRocha;
-        }
-        rastro = objeto.AddComponent<TrailRenderer>();
-        rastro.sharedMaterial = materialRastro;
-        rastro.time = 0.32f;
-        rastro.minVertexDistance = 0.12f;
-        rastro.startWidth = 0.64f;
-        rastro.endWidth = 0.04f;
-        rastro.startColor = new Color(1f, 0.60f, 0.16f, 0.9f);
-        rastro.endColor = new Color(1f, 0.13f, 0.018f, 0f);
-        rastro.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        rastro.receiveShadows = false;
-        faiscas = Particulas("Faíscas", corpo, new Color(2f, 0.48f, 0.06f, 0.9f), 0.23f, 0.12f, 22, 33);
-        fumaca = Particulas("Fumaça espacial", corpo, new Color(0.24f, 0.10f, 0.07f, 0.42f), 0.60f, 0.43f, 13, 22);
-        impacto = Particulas("Explosão no impacto", transform, new Color(2f, 0.44f, 0.025f, 1f), 0.44f, 0.17f, 0, 44);
+        else AdicionarCorpoRochoso(objeto);
+        rastro = AdicionarRastro(objeto, 0.86f, 0.43f);
+        faiscas = Particulas("Faíscas", corpo, new Color(2.2f, 0.63f, 0.09f, 0.92f), 0.30f, 0.085f, 28, 35);
+        fumaca = Particulas("Fumaça espacial", corpo, new Color(0.25f, 0.13f, 0.10f, 0.36f), 0.68f, 0.52f, 15, 24);
+        impacto = Particulas("Explosão no impacto", transform, new Color(2.6f, 0.63f, 0.06f, 1f), 0.55f, 0.13f, 0, 44);
         impacto.transform.localPosition = Vector3.up * 0.23f;
+        AlongarFaiscas(faiscas, 0.15f);
+        AlongarFaiscas(impacto, 0.7f);
 
         var alvo = GameObject.CreatePrimitive(PrimitiveType.Quad);
         alvo.name = "Alvo de impacto no piso";
@@ -79,10 +71,40 @@ public sealed class MeteorImpact : MonoBehaviour
         AtualizarMarca(0f, 0f);
     }
 
+    internal static TrailRenderer AdicionarRastro(GameObject objeto, float largura, float duracao)
+    {
+        if (materialRastro == null) materialRastro = MaterialDe("Gameplay/MeteorTrail");
+        var rastro = objeto.AddComponent<TrailRenderer>();
+        rastro.sharedMaterial = materialRastro;
+        rastro.time = duracao;
+        rastro.minVertexDistance = 0.09f;
+        rastro.startWidth = largura;
+        rastro.endWidth = 0.025f;
+        rastro.startColor = new Color(1f, 0.63f, 0.21f, 0.94f);
+        rastro.endColor = new Color(1f, 0.19f, 0.025f, 0f);
+        rastro.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        rastro.receiveShadows = false;
+        return rastro;
+    }
+
     static Material MaterialDe(string caminho)
     {
         Shader shader = Resources.Load<Shader>(caminho);
         return shader != null ? new Material(shader) : new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+    }
+
+    internal static void AdicionarCorpoRochoso(GameObject objeto, float calor = 1f)
+    {
+        int indice = proximaRocha;
+        proximaRocha = (proximaRocha + 1) % Rochas.Length;
+        if (Rochas[indice] == null) Rochas[indice] = MalhasEstelares.CriarRocha(300 + indice * 17);
+        if (materialRocha == null) materialRocha = MaterialDe("Space/RochaEspacial");
+        objeto.AddComponent<MeshFilter>().sharedMesh = Rochas[indice];
+        var render = objeto.AddComponent<MeshRenderer>();
+        render.sharedMaterial = materialRocha;
+        var calorDaRocha = new MaterialPropertyBlock();
+        calorDaRocha.SetFloat("_CalorMeteoro", calor);
+        render.SetPropertyBlock(calorDaRocha);
     }
 
     static ParticleSystem Particulas(string nome, Transform pai, Color cor, float vida, float tamanho, int taxa, int limite)
@@ -121,6 +143,16 @@ public sealed class MeteorImpact : MonoBehaviour
         return sistema;
     }
 
+    static void AlongarFaiscas(ParticleSystem sistema, float gravidade)
+    {
+        var main = sistema.main;
+        main.gravityModifier = gravidade;
+        var render = sistema.GetComponent<ParticleSystemRenderer>();
+        render.renderMode = ParticleSystemRenderMode.Stretch;
+        render.lengthScale = 2.0f;
+        render.velocityScale = 0.16f;
+    }
+
     // Retorna falso quando a marca, o calor e as partículas já terminaram.
     public bool Atualizar(float agora, Bounds anterior, Bounds atual, out bool bateuNoPiso, out bool acertou)
     {
@@ -133,7 +165,7 @@ public sealed class MeteorImpact : MonoBehaviour
         if (!emSolo)
         {
             corpo.position = ponto;
-            corpo.localRotation = Quaternion.Euler(progresso * 570f, progresso * 870f, progresso * 290f);
+            corpo.localRotation = Quaternion.AngleAxis(progresso * 440f, eixoDeGiro) * rotacaoInicial;
             if (!acertouSol && Cruzou(posicaoAnterior, ponto, anterior, atual, raio * 0.76f)) acertou = true;
             posicaoAnterior = ponto;
             if (progresso >= 1f)
@@ -177,56 +209,9 @@ public sealed class MeteorImpact : MonoBehaviour
     {
         propriedades.SetFloat("_Progresso", progresso);
         propriedades.SetFloat("_Brasa", emSolo ? 1f : 0f);
+        propriedades.SetFloat("_IdadeBrasa", sumico);
         propriedades.SetFloat("_Opacidade", 1f - Mathf.SmoothStep(0f, 1f, sumico));
         marca.SetPropertyBlock(propriedades);
     }
 
-    static Mesh CriarRocha()
-    {
-        const float g = 1.618034f;
-        Vector3[] ico =
-        {
-            new Vector3(-1,g,0), new Vector3(1,g,0), new Vector3(-1,-g,0), new Vector3(1,-g,0),
-            new Vector3(0,-1,g), new Vector3(0,1,g), new Vector3(0,-1,-g), new Vector3(0,1,-g),
-            new Vector3(g,0,-1), new Vector3(g,0,1), new Vector3(-g,0,-1), new Vector3(-g,0,1)
-        };
-        int[] faces =
-        {
-            0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11,
-            1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
-            3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9,
-            4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1
-        };
-        var vertices = new Vector3[faces.Length * 4];
-        var uv = new Vector2[vertices.Length];
-        var indices = new int[vertices.Length];
-        int n = 0;
-        for (int i = 0; i < faces.Length; i += 3)
-        {
-            Vector3 a = ico[faces[i]], b = ico[faces[i + 1]], c = ico[faces[i + 2]];
-            Vector3 ab = (a + b) * 0.5f, bc = (b + c) * 0.5f, ca = (c + a) * 0.5f;
-            Face(a, ab, ca); Face(ab, b, bc); Face(ca, bc, c); Face(ab, bc, ca);
-        }
-        var mesh = new Mesh { name = "Rocha facetada com fissuras" };
-        mesh.vertices = vertices;
-        mesh.uv = uv;
-        mesh.triangles = indices;
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
-        return mesh;
-
-        void Face(Vector3 a, Vector3 b, Vector3 c)
-        {
-            vertices[n] = Irregular(a); uv[n] = Vector2.zero; indices[n] = n; n++;
-            vertices[n] = Irregular(b); uv[n] = Vector2.right; indices[n] = n; n++;
-            vertices[n] = Irregular(c); uv[n] = Vector2.up; indices[n] = n; n++;
-        }
-    }
-
-    static Vector3 Irregular(Vector3 ponto)
-    {
-        Vector3 p = ponto.normalized;
-        return Vector3.Scale(p, new Vector3(0.57f, 0.62f, 0.55f)) *
-            (0.98f + Mathf.Sin(Vector3.Dot(p, new Vector3(8f, 19f, 12f))) * 0.13f);
-    }
 }

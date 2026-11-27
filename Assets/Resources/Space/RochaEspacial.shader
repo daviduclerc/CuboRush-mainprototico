@@ -10,6 +10,7 @@ Shader "CuboRush/RochaEspacial"
         [HDR] _CorPreenchimento ("Luz da nebulosa", Color) = (0.30, 0.20, 0.65, 1)
         [HDR] _CorLava ("Cor da lava", Color) = (1.0, 0.38, 0.05, 1)
         _QuantidadeLava ("Quantidade de lava", Range(0, 1)) = 0.3
+        _CalorMeteoro ("Calor das fissuras de meteoro", Range(0, 1)) = 0
         _DirLuz ("Direção do buraco negro", Vector) = (0, 0.25, 1, 0)
     }
     SubShader
@@ -30,7 +31,7 @@ Shader "CuboRush/RochaEspacial"
             half4 _CorContraluz;
             half4 _CorPreenchimento;
             half4 _CorLava;
-            float _QuantidadeLava;
+            float _QuantidadeLava, _CalorMeteoro;
             float4 _DirLuz;
             CBUFFER_END
             struct A { float4 p:POSITION; };
@@ -67,9 +68,21 @@ Shader "CuboRush/RochaEspacial"
 
                 float lava = EstFbm3(i.objeto * 5.0 + 3.0);
                 cor += _CorLava.rgb * smoothstep(1.0 - _QuantidadeLava * 0.45, 1.0, lava) * 2.2;
+                if (_CalorMeteoro > 0)
+                {
+                    float3 p = i.objeto * 6.8;
+                    float deformacao = EstRuido3(p * 2.1 + 7.2);
+                    float profundidade = abs(EstFbm3(p + deformacao * 0.58) - 0.46);
+                    float fissura = 1 - smoothstep(0.009, 0.023, profundidade);
+                    float brasa = 1 - smoothstep(0.023, 0.077, profundidade);
+                    float faixa = smoothstep(0.22, 0.55, EstRuido3(p * 0.54));
+                    float pulso = 0.79 + 0.21 * sin(_Time.y * 7.0 + deformacao * 8.0);
+                    cor += _CalorMeteoro * (half3(1.95, 0.48, 0.055) * fissura * faixa * pulso
+                        + half3(0.38, 0.062, 0.012) * brasa + half3(0.61, 0.20, 0.05) * borda * perto);
+                }
                 // Teto de brilho: nenhum ponto vira clarão no bloom.
                 float pico = max(cor.r, max(cor.g, cor.b));
-                cor *= min(1.0, 1.25 / max(pico, 0.0001));
+                cor *= min(1.0, lerp(1.25, 2.10, _CalorMeteoro) / max(pico, 0.0001));
                 return half4(cor, 1);
             }
             ENDHLSL

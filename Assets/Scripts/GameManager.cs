@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
-public enum EstadoJogo { Menu, Jogando, Pausado, FimDeJogo }
+public enum EstadoJogo { Menu, Jogando, Pausado, FimDeJogo, Vitoria }
 
 /// <summary>
 /// Cérebro do jogo: estado (menu, jogando, pausa, fim), velocidade que cresce
@@ -47,21 +47,37 @@ public class GameManager : MonoBehaviour
     public float TempoIma { get; private set; }
     public float TempoDobro { get; private set; }
     public float TempoDeJogo { get; private set; }
+    public const int MetaMoedas = 50;
+    public const int MetaPontos = 1000;
+    public const int MetaRaids = 2;
+    public int RaidsSuperadas { get; private set; }
+    public bool EmResultado => Estado == EstadoJogo.FimDeJogo || Estado == EstadoJogo.Vitoria;
+    public bool NovoRecorde { get; private set; }
+    public bool AbrirHistoricoNoInicio { get; private set; }
+    public bool TemPartidaSalva => UltimaPartida != null;
+    public int UltimaPontuacao => UltimaPartida?.pontos ?? 0;
+    public int UltimasMoedas => UltimaPartida?.moedas ?? 0;
+    public int UltimasOndas => UltimaPartida?.ondas ?? 0;
+    public string UltimoResultado => UltimaPartida?.Rotulo ?? "";
+    public bool ResultadoPronto => EmResultado && (morteSolar == null || !morteSolar.EmExecucao);
+    public float EscurecimentoFinal => morteSolar != null ? morteSolar.Escurecimento : 0f;
 
     /// <summary>0 no começo, 1 quando chega na velocidade máxima.</summary>
     public float Dificuldade => Mathf.InverseLerp(velocidadeInicial, velocidadeMaxima, Velocidade);
 
     int Multiplicador => TempoDobro > 0f ? 2 : 1;
 
-    static bool pularMenu;
+    static bool abrirHistoricoAoCarregar;
     bool carregandoCena;
-    bool novoRecorde;
-    float momentoFim;
+    bool progressoSalvo;
+    HistoricoPartidas historico;
+    PartidaSalva UltimaPartida => PartidaNoHistorico(0);
+    internal PartidaSalva PartidaNoHistorico(int posicao) => historico?.Obter(posicao);
     float tempoImpulsoTermico;
     // Impulso suavizado: a velocidade sobe e desce aos poucos em vez de saltar.
     float impulsoSuave, velocidadeImpulso;
     const float SuavidadeImpulso = 0.22f;
-    // Estilingue gravitacional: impulso de velocidade ao passar rente a um planeta.
+    // Estilingue gravitacional: impulso de velocidade ao passar rente ao asteroide indicado.
     float tempoEstilingue, forcaEstilingue, estilingueSuave, velocidadeEstilingue;
 
     /// <summary>0..1: quanto do impulso do estilingue está atuando agora.</summary>
@@ -70,6 +86,7 @@ public class GameManager : MonoBehaviour
 
     MainMenuUI menuInicial;
     PauseMenuUI menuPausa;
+    SunDeathSequence morteSolar;
     AudioSource audioFonte;
     AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro, somGravidade, somEstilingue, somTravessia;
     GUIStyle estilo;
@@ -83,19 +100,19 @@ public class GameManager : MonoBehaviour
         if (menuInicial == null) menuInicial = gameObject.AddComponent<MainMenuUI>();
         menuPausa = GetComponent<PauseMenuUI>();
         if (menuPausa == null) menuPausa = gameObject.AddComponent<PauseMenuUI>();
+        if (GetComponent<ResultadoPartidaUI>() == null) gameObject.AddComponent<ResultadoPartidaUI>();
+        if (!TryGetComponent(out morteSolar)) morteSolar = Object.FindAnyObjectByType<SunDeathSequence>();
+        if (morteSolar == null) morteSolar = gameObject.AddComponent<SunDeathSequence>();
         Time.timeScale = 1f;
         Velocidade = velocidadeInicial;
         impulsoSuave = velocidadeImpulso = 0f;
         Estabilidade = 100f;
         Recorde = PlayerPrefs.GetInt("Recorde", 0);
         MoedasTotal = PlayerPrefs.GetInt("MoedasTotal", 0);
+        historico = HistoricoPartidas.Carregar();
 
-        // Ao jogar de novo, começa direto, sem passar pelo menu.
-        if (pularMenu)
-        {
-            pularMenu = false;
-            Estado = EstadoJogo.Jogando;
-        }
+        AbrirHistoricoNoInicio = abrirHistoricoAoCarregar;
+        abrirHistoricoAoCarregar = false;
 
         audioFonte = gameObject.AddComponent<AudioSource>();
         audioFonte.playOnAwake = false;
@@ -143,13 +160,11 @@ public class GameManager : MonoBehaviour
                 if (Estabilidade <= 0f)
                 {
                     FimDeJogo();
-                    PlayerController jogador = Object.FindAnyObjectByType<PlayerController>();
-                    if (jogador != null) jogador.Morrer();
-                    CameraFollow.Tremer(0.55f, 0.7f);
                     break;
                 }
 
-                if (ApertouPausa()) Pausar();
+                VerificarVitoria();
+                if (Estado == EstadoJogo.Jogando && ApertouPausa()) Pausar();
                 break;
 
             case EstadoJogo.Pausado:
@@ -157,11 +172,6 @@ public class GameManager : MonoBehaviour
                     RetomarPartida();
                 break;
 
-            case EstadoJogo.FimDeJogo:
-                // Pequena espera para não reiniciar sem querer.
-                if (Time.unscaledTime - momentoFim > 0.6f && Confirmou())
-                    RecarregarCena(true);
-                break;
         }
     }
 
@@ -198,17 +208,23 @@ public class GameManager : MonoBehaviour
 
     public void VoltarAoMenu()
     {
-        if (Estado == EstadoJogo.Pausado) RecarregarCena(false);
+        if (Estado == EstadoJogo.Pausado || ResultadoPronto) RecarregarCena(false);
     }
 
-    void RecarregarCena(bool jogarDireto)
+    public void JogarNovamente()
+    {
+        if (ResultadoPronto) RecarregarCena(true);
+    }
+
+    void RecarregarCena(bool mostrarHistorico)
     {
         if (carregandoCena) return;
         int cena = Mathf.Max(0, SceneManager.GetActiveScene().buildIndex);
         if (cena >= SceneManager.sceneCountInBuildSettings) return;
         carregandoCena = true;
-        if (!jogarDireto) SalvarProgressoDaPartida();
-        pularMenu = jogarDireto;
+        if (Estado == EstadoJogo.Pausado) SalvarProgressoDaPartida();
+        abrirHistoricoAoCarregar = mostrarHistorico;
+        Time.timeScale = 1f;
         SceneManager.LoadScene(cena);
     }
 
@@ -249,14 +265,23 @@ public class GameManager : MonoBehaviour
         {
             Estabilidade = Mathf.Max(0f, Estabilidade - perdaPorMoedaDeOutraCor);
             Tocar(somBatida, 0.28f);
-            if (Estabilidade <= 0f)
-            {
-                FimDeJogo();
-                PlayerController jogador = Object.FindAnyObjectByType<PlayerController>();
-                if (jogador != null) jogador.Morrer();
-                CameraFollow.Tremer(0.55f, 0.7f);
-            }
+            if (Estabilidade <= 0f) FimDeJogo();
         }
+        VerificarVitoria();
+    }
+
+    public void RegistrarRaidDeMeteoros()
+    {
+        if (Estado != EstadoJogo.Jogando) return;
+        RaidsSuperadas++;
+        VerificarVitoria();
+    }
+
+    void VerificarVitoria()
+    {
+        if (Estado != EstadoJogo.Jogando || Moedas < MetaMoedas || Pontos < MetaPontos || RaidsSuperadas < MetaRaids) return;
+        Estado = EstadoJogo.Vitoria;
+        SalvarProgressoDaPartida();
     }
     public void AtivarEscudo() { TemEscudo = true; Tocar(somPowerUp); }
     public void AtivarIma() { TempoIma = duracaoIma; Tocar(somPowerUp); }
@@ -311,24 +336,28 @@ public class GameManager : MonoBehaviour
 
     public void FimDeJogo()
     {
-        if (Estado == EstadoJogo.FimDeJogo || carregandoCena) return;
+        if (Estado != EstadoJogo.Jogando || carregandoCena) return;
         Estado = EstadoJogo.FimDeJogo;
-        momentoFim = Time.unscaledTime;
-        Tocar(somBatida);
+        morteSolar.Iniciar();
         SalvarProgressoDaPartida();
     }
 
     void SalvarProgressoDaPartida()
     {
+        if (progressoSalvo) return;
+        progressoSalvo = true;
         int pontos = Mathf.FloorToInt(Pontos);
         if (pontos > Recorde)
         {
             Recorde = pontos;
-            novoRecorde = true;
+            NovoRecorde = true;
             PlayerPrefs.SetInt("Recorde", Recorde);
         }
         MoedasTotal += Moedas;
         PlayerPrefs.SetInt("MoedasTotal", MoedasTotal);
+        ResultadoPartida resultado = Estado == EstadoJogo.Vitoria ? ResultadoPartida.Vitoria :
+            Estado == EstadoJogo.FimDeJogo ? ResultadoPartida.Derrota : ResultadoPartida.Interrompida;
+        historico.Registrar(new PartidaSalva(pontos, Moedas, RaidsSuperadas, resultado, usaRaids: true));
         PlayerPrefs.Save();
     }
 
@@ -382,7 +411,7 @@ public class GameManager : MonoBehaviour
             estiloContorno.normal.background = EstiloUI.TexturaContorno;
             estiloContorno.border = new RectOffset(20, 20, 20, 20);
         }
-        if (Estado == EstadoJogo.Jogando) return;
+        if (Estado == EstadoJogo.Jogando || EmResultado) return;
 
         float w = Screen.width, h = Screen.height;
         // A escala respeita altura e largura para nada ultrapassar a tela.
@@ -432,7 +461,7 @@ public class GameManager : MonoBehaviour
                     "Moedas da mesma cor recuperam estabilidade; de outra cor, reduzem.", 17,
                     TextAnchor.MiddleCenter, EstiloUI.Ouro, s, false);
                 Texto(new Rect(dicas.x, dicas.y + 48 * s, dicas.width, 24 * s),
-                    "Gravidade: pule as ondas, resista aos mini buracos negros e passe rente aos planetas.", 17,
+                    "Gravidade: pule as ondas, resista aos mini buracos negros e siga as setas.", 17,
                     TextAnchor.MiddleCenter, new Color(0.85f, 0.6f, 1f), s, false);
 
                 Texto(new Rect(0, cartao.yMax + 18 * s, w, 28 * s),
@@ -451,58 +480,6 @@ public class GameManager : MonoBehaviour
                 break;
             }
 
-            case EstadoJogo.FimDeJogo:
-            {
-                // Entra aos poucos para não cobrir a explosão do Sol logo de cara.
-                float entrada = Mathf.SmoothStep(0f, 1f, (Time.unscaledTime - momentoFim - 0.35f) / 0.6f);
-                if (entrada <= 0f) break;
-                Color corAntes = GUI.color;
-                GUI.color = new Color(1f, 1f, 1f, entrada);
-                Fundo(w, h, 0.9f);
-
-                float larguraCartao = 520f * s, alturaCartao = 300f * s;
-                float yCartao = topo + segura.height * 0.5f - alturaCartao * 0.5f + (1f - entrada) * 30f * s;
-                Rect cartao = new Rect(cx - larguraCartao * 0.5f, yCartao, larguraCartao, alturaCartao);
-
-                TextoBrilhante(new Rect(0, cartao.y - 100 * s, w, 90 * s), "FIM DE JOGO", 68,
-                    Color.white, new Color(1f, 0.30f, 0.32f), s);
-                Cartao(cartao, s);
-
-                Texto(new Rect(cartao.x, cartao.y + 22 * s, cartao.width, 22 * s), "PONTUAÇÃO", 16,
-                    TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
-                Texto(new Rect(cartao.x, cartao.y + 44 * s, cartao.width, 74 * s), Mathf.FloorToInt(Pontos).ToString(), 64,
-                    TextAnchor.MiddleCenter, Color.white, s);
-
-                if (novoRecorde)
-                {
-                    Rect selo = new Rect(cx - 110 * s, cartao.y + 124 * s, 220 * s, 32 * s);
-                    Color antes = GUI.color;
-                    GUI.color = new Color(EstiloUI.Ouro.r, EstiloUI.Ouro.g, EstiloUI.Ouro.b, (0.22f + 0.12f * pisca) * entrada);
-                    GUI.Box(selo, GUIContent.none, estiloTecla);
-                    GUI.color = antes;
-                    Texto(selo, "NOVO RECORDE!", 18, TextAnchor.MiddleCenter, EstiloUI.Ouro, s);
-                }
-                else
-                {
-                    Texto(new Rect(cartao.x, cartao.y + 124 * s, cartao.width, 32 * s), "RECORDE  " + Recorde, 18,
-                        TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
-                }
-
-                // Moedas e tempo de corrida lado a lado.
-                float yInfo = cartao.y + 178 * s;
-                float metade = cartao.width * 0.5f;
-                Texto(new Rect(cartao.x, yInfo, metade, 22 * s), "MOEDAS", 14, TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
-                Texto(new Rect(cartao.x, yInfo + 20 * s, metade, 36 * s), Moedas.ToString(), 30, TextAnchor.MiddleCenter, EstiloUI.Ouro, s);
-                int segundos = Mathf.FloorToInt(TempoDeJogo);
-                Texto(new Rect(cartao.x + metade, yInfo, metade, 22 * s), "TEMPO", 14, TextAnchor.MiddleCenter, EstiloUI.TextoSuave, s, false);
-                Texto(new Rect(cartao.x + metade, yInfo + 20 * s, metade, 36 * s), (segundos / 60) + ":" + (segundos % 60).ToString("00"),
-                    30, TextAnchor.MiddleCenter, EstiloUI.Ciano, s);
-
-                Texto(new Rect(0, cartao.yMax + 24 * s, w, 34 * s), "ESPAÇO, CLIQUE OU TOQUE PARA JOGAR DE NOVO", 22,
-                    TextAnchor.MiddleCenter, new Color(1f, 1f, 1f, pisca), s);
-                GUI.color = corAntes;
-                break;
-            }
         }
     }
 

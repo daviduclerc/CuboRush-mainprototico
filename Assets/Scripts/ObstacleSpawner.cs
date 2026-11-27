@@ -6,14 +6,13 @@ using UnityEngine;
 /// para trás e verifica as colisões com o cubo.
 ///
 /// Tipos de obstáculo:
-///  - Baixo  (rosa):    pule por cima ou desvie.
-///  - Alto   (vermelho): só desviando.
-///  - Barra  (roxo):    deslize por baixo ou desvie.
-///  - Móvel  (branco):  anda de um lado para o outro da pista.
+///  - Pirâmide: pule por cima ou desvie.
+///  - Barreira suspensa: deslize por baixo ou desvie.
 ///  - Parede de cor:    barreira luminosa; só atravessa com o cubo da mesma cor.
 ///  - Projétil:         disparado pelas naves inimigas (ver Enemy).
 /// Sempre existe um caminho possível em cada fileira.
 /// </summary>
+[DefaultExecutionOrder(100)]
 public class ObstacleSpawner : MonoBehaviour
 {
     public PlayerController jogador;
@@ -58,23 +57,12 @@ public class ObstacleSpawner : MonoBehaviour
     float proximoInimigo;
     float zInicial;
 
-    enum Obst { Nenhum, Baixo, Alto, Barra }
+    [System.Flags]
+    enum Obst { Nenhum = 0, Baixo = 1, Barra = 2 }
 
-    static readonly Color corBaixo = new Color(1f, 0.2f, 0.7f);
-    static readonly Color corAlto = new Color(0.9f, 0.15f, 0.2f);
-    static readonly Color corBarra = new Color(0.55f, 0.3f, 1f);
-    static readonly Color corMovel = new Color(0.9f, 0.9f, 0.95f);
     static readonly Color corEscudo = new Color(0.3f, 0.8f, 1f);
     static readonly Color corIma = new Color(0.3f, 1f, 0.45f);
     static readonly Color corDobro = new Color(1f, 0.5f, 0.9f);
-
-    static readonly string[] caminhosArtefatos =
-    {
-        "Gameplay/ArtifactFire", "Gameplay/ArtifactEarth", "Gameplay/ArtifactWater",
-        "Gameplay/ArtifactAir", "Gameplay/ArtifactCosmos"
-    };
-    static Texture2D[] imagensArtefatos;
-    static Material[] materiaisArtefatos;
 
     readonly List<TrackItem> itens = new List<TrackItem>();
     float proximoZ;
@@ -83,6 +71,13 @@ public class ObstacleSpawner : MonoBehaviour
     bool curvaturaRemovida;
     EstadoJogo estadoAnterior = EstadoJogo.Menu;
     float proximoPowerUpZ;
+    Bounds caixaAnterior;
+    int passoPadrao;
+    int faixaRota;
+    bool comecaComPulo;
+    bool emChuvaDeMeteoros;
+    int faixaSeguraDaChuva;
+    float proximaFileiraDeMoedasDaChuva;
 
     int Faixas => jogador.quantidadeFaixas;
     float MeiaPista => Faixas * jogador.larguraFaixa / 2f;
@@ -91,6 +86,8 @@ public class ObstacleSpawner : MonoBehaviour
     {
         float z = jogador.transform.position.z;
         zInicial = z;
+        faixaRota = Faixas / 2;
+        caixaAnterior = jogador.Limites;
         proximoInimigo = primeiroInimigo;
         proximoZ = z + inicioLivre;
         proximoPowerUpZ = z + Random.Range(120f, 200f);
@@ -103,6 +100,7 @@ public class ObstacleSpawner : MonoBehaviour
         GameManager jogo = GameManager.Instancia;
         if (jogo == null || jogador == null) return;
 
+        bool vinhaJogando = estadoAnterior == EstadoJogo.Jogando;
         bool retomando = estadoAnterior == EstadoJogo.Pausado && jogo.Estado == EstadoJogo.Jogando;
         estadoAnterior = jogo.Estado;
         if (retomando)
@@ -117,11 +115,24 @@ public class ObstacleSpawner : MonoBehaviour
         RestaurarCurvatura();
         float zJogador = jogador.transform.position.z;
 
-        while (proximoZ < zJogador + distanciaVisao)
-            proximoZ += CriarFileira(proximoZ, jogo);
+        if (emChuvaDeMeteoros)
+        {
+            float horizonte = zJogador + Mathf.Min(distanciaVisao, jogo.Velocidade * 2.6f + 8f);
+            while (proximaFileiraDeMoedasDaChuva < horizonte)
+            {
+                if (Random.value < chanceMoedas)
+                    CriarMoedas(faixaSeguraDaChuva, proximaFileiraDeMoedasDaChuva, Obst.Nenhum, jogo.Velocidade);
+                proximaFileiraDeMoedasDaChuva += Mathf.Max(16f, jogo.Velocidade * 1.25f);
+            }
+        }
+        else
+        {
+            while (proximoZ < zJogador + distanciaVisao)
+                proximoZ += CriarFileira(proximoZ, jogo);
+        }
 
         // De tempos em tempos chega uma nave inimiga (uma de cada vez).
-        if (jogo.Estado == EstadoJogo.Jogando && inimigoAtual == null &&
+        if (!emChuvaDeMeteoros && jogo.Estado == EstadoJogo.Jogando && inimigoAtual == null &&
             jogo.TempoDeJogo >= proximoInimigo)
         {
             // O primeiro é sempre o Atirador (mais simples); depois, qualquer tipo.
@@ -135,15 +146,16 @@ public class ObstacleSpawner : MonoBehaviour
             proximoInimigo = jogo.TempoDeJogo + Random.Range(intervaloInimigoMin, intervaloInimigoMax);
         }
 
-        AtualizarItens(jogo, zJogador);
+        Bounds caixa = jogador.Limites;
+        AtualizarItens(jogo, zJogador, vinhaJogando ? caixaAnterior : caixa, caixa);
+        caixaAnterior = caixa;
     }
 
     // ---------- Atualização e colisão ----------
 
-    void AtualizarItens(GameManager jogo, float zJogador)
+    void AtualizarItens(GameManager jogo, float zJogador, Bounds anterior, Bounds caixaJogador)
     {
         bool jogando = jogo.Estado == EstadoJogo.Jogando;
-        Bounds caixaJogador = jogador.Limites;
 
         for (int i = itens.Count - 1; i >= 0; i--)
         {
@@ -247,7 +259,20 @@ public class ObstacleSpawner : MonoBehaviour
                 }
             }
 
-            if (!item.Intersects(caixaJogador)) continue;
+            if (item.obstaculoSolar != null)
+            {
+                if (item.atravessado) continue;
+                Bounds limites = item.Limites;
+                if (caixaJogador.min.z < limites.min.z - 8f && caixaJogador.max.z < limites.min.z) continue;
+                if (!item.obstaculoSolar.Intersecta(anterior, caixaJogador))
+                {
+                    RegistrarTravessia(item, limites, anterior, caixaJogador, jogo);
+                    continue;
+                }
+                item.atravessado = true;
+                item.obstaculoSolar.Sinalizar(false);
+            }
+            else if (!item.Intersects(caixaJogador)) continue;
 
             switch (item.tipo)
             {
@@ -310,11 +335,25 @@ public class ObstacleSpawner : MonoBehaviour
                         {
                             CameraFollow.Tremer(0.24f, 0.32f);
                             if (jogo.Estado == EstadoJogo.FimDeJogo) return;
+                            if (item.obstaculoSolar != null) jogo.SomDeImpacto();
                         }
                     }
                     break;
             }
         }
+    }
+
+    static void RegistrarTravessia(TrackItem item, Bounds limites, Bounds anterior, Bounds atual, GameManager jogo)
+    {
+        if (atual.min.z <= limites.max.z) return;
+        item.atravessado = true;
+        if (!item.obstaculoSolar.SomDeTravessia || anterior.min.z > limites.max.z) return;
+
+        float fracao = Mathf.InverseLerp(anterior.min.z, atual.min.z, limites.max.z);
+        float x = Mathf.Lerp(anterior.center.x, atual.center.x, fracao);
+        if (x < limites.min.x || x > limites.max.x) return;
+        item.obstaculoSolar.Sinalizar(true);
+        jogo.SomDeTravessia();
     }
 
     bool BateuEmObstaculo(TrackItem projetil)
@@ -342,7 +381,10 @@ public class ObstacleSpawner : MonoBehaviour
     {
         float d = jogo.Dificuldade;
         float vel = jogo.Velocidade;
-        float espaco = vel * Mathf.Lerp(tempoReacaoInicial, tempoReacaoFinal, d) * Random.Range(1f, 1.35f);
+        float manobra = Mathf.Max(jogador.TempoNoAr + PlayerController.TempoPreparoPulo, jogador.duracaoDeslize);
+        float intervalo = Mathf.Max(Mathf.Lerp(tempoReacaoInicial, tempoReacaoFinal, d), manobra + 0.26f);
+        float espaco = jogo.VelocidadePrevista(z - jogador.transform.position.z + 20f)
+            * intervalo * Random.Range(1f, 1.16f) + 2f;
 
         if (jogo.TempoDeJogo >= inicioBuracos && z >= proximoBuracoZ && Random.value < chanceBuraco)
         {
@@ -351,38 +393,22 @@ public class ObstacleSpawner : MonoBehaviour
             espaco *= 1.3f;
             proximoBuracoZ = z + Random.Range(240f, 400f);
         }
-        else if (z > zInicial + 120f && Random.value < chanceParedeDeCor)
+        else if (passoPadrao == 0 && z > zInicial + 120f && Random.value < chanceParedeDeCor)
         {
-            // Fileira especial: parede de cor ocupando a pista inteira.
             CriarParedeDeCor(z);
-            espaco *= 1.15f;
-        }
-        else if (d > 0.25f && Random.value < 0.12f)
-        {
-            // Fileira especial: um obstáculo móvel sozinho.
-            CriarMovel(z, d);
             espaco *= 1.15f;
         }
         else
         {
             Obst[] fila = MontarFila(d);
-
             for (int f = 0; f < Faixas; f++)
-                if (fila[f] != Obst.Nenhum) CriarObstaculo(fila[f], f, z);
+                if (fila[f] != Obst.Nenhum) CriarObstaculos(fila[f], f, z);
 
-            // Moedas mostrando um caminho seguro por esta fileira.
+            // As moedas sugerem a rota, incluindo a faixa vizinha quando a anterior está bloqueada.
             if (Random.value < chanceMoedas)
-            {
-                List<int> seguras = new List<int>();
-                for (int f = 0; f < Faixas; f++)
-                    if (fila[f] != Obst.Alto) seguras.Add(f);
-
-                int faixa = seguras[Random.Range(0, seguras.Count)];
-                CriarMoedas(faixa, z, fila[faixa], vel);
-            }
+                CriarMoedas(faixaRota, z, fila[faixaRota], vel);
         }
 
-        // No meio do caminho até a próxima fileira: power-up ou mais moedas.
         float zMeio = z + espaco / 2f;
         if (zMeio >= proximoPowerUpZ)
         {
@@ -404,134 +430,57 @@ public class ObstacleSpawner : MonoBehaviour
         return espaco;
     }
 
-    /// <summary>Decide o que vai em cada faixa, sempre deixando passagem.</summary>
-    Obst[] MontarFila(float d)
+    // Cada padrão alterna os dois gestos e fecha com uma troca para uma faixa adjacente.
+    Obst[] MontarFila(float dificuldade)
     {
-        Obst[] fila = new Obst[Faixas];
+        var fila = new Obst[Faixas];
+        int faixaAnterior = faixaRota;
+        if (passoPadrao == 0) comecaComPulo = Random.value < 0.5f;
 
-        // Parede inteira que obriga a pular ou a deslizar.
-        if (d > 0.15f && Random.value < 0.15f)
+        if (passoPadrao == 2)
         {
-            Obst tipo = Random.value < 0.5f ? Obst.Baixo : Obst.Barra;
-            for (int f = 0; f < Faixas; f++) fila[f] = tipo;
-            return fila;
+            faixaRota = FaixaVizinha(faixaAnterior);
+            fila[faixaAnterior] = Obst.Baixo | Obst.Barra;
+        }
+        else
+        {
+            bool pular = passoPadrao == 0 ? comecaComPulo : !comecaComPulo;
+            fila[faixaRota] = pular ? Obst.Baixo : Obst.Barra;
         }
 
-        // Bloqueia algumas faixas; pelo menos uma fica totalmente livre.
-        int maximo = Mathf.Min(Faixas - 1, Mathf.RoundToInt(Mathf.Lerp(2f, 4f, d)));
-        int quantidade = Random.Range(1, maximo + 1);
-
-        List<int> livres = new List<int>();
-        for (int f = 0; f < Faixas; f++) livres.Add(f);
-
-        for (int i = 0; i < quantidade; i++)
+        int alternativa = Faixas > 1 ? FaixaVizinha(faixaRota) : faixaRota;
+        for (int f = 0; f < Faixas; f++)
         {
-            int sorteio = Random.Range(0, livres.Count);
-            int faixa = livres[sorteio];
-            livres.RemoveAt(sorteio);
-
-            float r = Random.value;
-            fila[faixa] = r < 0.35f ? Obst.Baixo : (r < 0.75f ? Obst.Alto : Obst.Barra);
+            if (f == faixaRota || f == alternativa || fila[f] != Obst.Nenhum) continue;
+            if (Random.value < Mathf.Lerp(0.26f, 0.80f, dificuldade))
+                fila[f] = Random.value < 0.5f ? Obst.Baixo : Obst.Barra;
         }
+
+        passoPadrao = (passoPadrao + 1) % (Faixas > 1 ? 3 : 2);
         return fila;
     }
 
-    void CriarObstaculo(Obst tipo, int faixa, float z)
+    int FaixaVizinha(int faixa)
     {
-        float x = jogador.PosicaoXDaFaixa(faixa);
-        float largura = jogador.larguraFaixa;
-        Vector3 tamanho;
-        float centroY;
-        Color cor;
+        if (faixa == 0) return 1;
+        if (faixa == Faixas - 1) return faixa - 1;
+        return faixa + (Random.value < 0.5f ? -1 : 1);
+    }
 
-        switch (tipo)
+    void CriarObstaculos(Obst tipo, int faixa, float z)
+    {
+        var posicao = new Vector3(jogador.PosicaoXDaFaixa(faixa), 0f, z);
+        // No bloqueio duplo, só a barreira leva as marcas de piso. Ambos mantêm colisões próprias.
+        if ((tipo & Obst.Baixo) != 0)
         {
-            case Obst.Baixo:
-                tamanho = new Vector3(largura * 0.9f, 0.7f, 1f);
-                centroY = 0.35f;
-                cor = corBaixo;
-                break;
-            case Obst.Barra:
-                // Quadrado suspenso: vão de 0,65 embaixo para passar deslizando.
-                // A base reta e o vão aberto deixam claro que dá para passar por baixo.
-                tamanho = new Vector3(largura, largura, 0.6f);
-                centroY = 0.65f + largura / 2f;
-                cor = corBarra;
-                break;
-            default:
-                tamanho = new Vector3(largura * 0.9f, 2.6f, 1f);
-                centroY = 1.3f;
-                cor = corAlto;
-                break;
+            var piramide = ObstaculoSolar.Criar(transform, posicao, jogador.larguraFaixa, true, tipo == Obst.Baixo);
+            Registrar(piramide.gameObject, TipoItem.Obstaculo, piramide.Limites.size).obstaculoSolar = piramide;
         }
-
-        int faces = tipo == Obst.Baixo ? 3 : (tipo == Obst.Barra ? 4 : 6);
-        // Barra: quadrado (passa por baixo). Alto: base inteira no chão (só desviando).
-        FormaObstaculo forma = tipo == Obst.Barra ? FormaObstaculo.Quadrado
-            : (tipo == Obst.Alto ? FormaObstaculo.HexagonoBaseReta : FormaObstaculo.Regular);
-        GameObject obj = PolyhedronVisual.Criar("Poliedro" + tipo, transform,
-            new Vector3(x, centroY, z), tamanho, faces, cor, forma);
-        // Paredes que não dá para passar agachado se curvam junto com o piso no poço gravitacional.
-        if (tipo != Obst.Barra) obj.AddComponent<DeformacaoPeloPoco>();
-        Registrar(obj, TipoItem.Obstaculo, tamanho);
-    }
-
-    void CriarArtefatoNoObstaculo(Transform pai, Obst tipo, Vector3 tamanho)
-    {
-        GarantirArtefatos();
-        int indice = tipo == Obst.Baixo ? 0 : (tipo == Obst.Barra ? 2 : 1);
-        if (imagensArtefatos[indice] == null || materiaisArtefatos[indice] == null) return;
-
-        float largura = Mathf.Min(tamanho.x * 0.70f, 1.12f);
-        float altura = Mathf.Min(tamanho.y * 0.70f, 1.50f);
-        GameObject imagem = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        imagem.name = "NucleoVisualDoArtefato";
-        imagem.transform.SetParent(pai, false);
-        imagem.transform.localPosition = new Vector3(0f, 0f, -0.39f);
-        imagem.transform.localScale = new Vector3(largura, altura, 1f);
-        Collider colisor = imagem.GetComponent<Collider>();
-        if (colisor != null) Destroy(colisor);
-        imagem.GetComponent<Renderer>().sharedMaterial = materiaisArtefatos[indice];
-    }
-
-    static void GarantirArtefatos()
-    {
-        if (imagensArtefatos != null) return;
-        imagensArtefatos = new Texture2D[caminhosArtefatos.Length];
-        materiaisArtefatos = new Material[caminhosArtefatos.Length];
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader == null) shader = Shader.Find("Unlit/Transparent");
-        for (int i = 0; i < caminhosArtefatos.Length; i++)
+        if ((tipo & Obst.Barra) != 0)
         {
-            imagensArtefatos[i] = Resources.Load<Texture2D>(caminhosArtefatos[i]);
-            if (imagensArtefatos[i] == null || shader == null) continue;
-            Material mat = new Material(shader);
-            mat.mainTexture = imagensArtefatos[i];
-            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", imagensArtefatos[i]);
-            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
-            mat.color = Color.white;
-            mat.SetOverrideTag("RenderType", "Transparent");
-            mat.SetFloat("_Surface", 1f);
-            mat.SetFloat("_Blend", 0f);
-            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetFloat("_ZWrite", 0f);
-            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-            materiaisArtefatos[i] = mat;
+            var barreira = ObstaculoSolar.Criar(transform, posicao, jogador.larguraFaixa, false, tipo == Obst.Barra);
+            Registrar(barreira.gameObject, TipoItem.Obstaculo, barreira.Limites.size).obstaculoSolar = barreira;
         }
-    }
-
-    void CriarMovel(float z, float d)
-    {
-        Vector3 tamanho = new Vector3(1.8f, 2.2f, 0.9f);
-        float limite = MeiaPista - tamanho.x / 2f;
-
-        TrackItem item = Registrar(PolyhedronVisual.Criar("PoliedroMovel", transform,
-            new Vector3(Random.Range(-limite, limite), tamanho.y / 2f, z),
-            tamanho, 5, corMovel, FormaObstaculo.PentagonoBaseReta), TipoItem.Obstaculo, tamanho);
-        item.velocidadeX = Mathf.Lerp(3f, 6f, d) * (Random.value < 0.5f ? -1f : 1f);
-        item.gameObject.AddComponent<DeformacaoPeloPoco>();
     }
 
     /// <summary>
@@ -561,6 +510,7 @@ public class ObstacleSpawner : MonoBehaviour
     /// <summary>Projétil disparado por um inimigo a partir de "origem".</summary>
     public void CriarProjetil(Vector3 origem, TipoProjetil tipo = TipoProjetil.Normal)
     {
+        if (emChuvaDeMeteoros) return;
         GameObject obj;
         Vector3 tamanho;
         float velocidade = velocidadeProjetil;
@@ -633,6 +583,7 @@ public class ObstacleSpawner : MonoBehaviour
     /// </summary>
     public void AdotarKamikaze(GameObject nave, Vector3 tamanho)
     {
+        if (emChuvaDeMeteoros) { Destroy(nave); return; }
         TrackItem item = Registrar(nave, TipoItem.Obstaculo, tamanho);
         item.projetil = true;
         item.velocidadeZ = -velocidadeProjetil * 1.5f;
@@ -695,9 +646,44 @@ public class ObstacleSpawner : MonoBehaviour
         item.girar = true;
     }
 
+    public void EntrarNaChuvaDeMeteoros(int faixaSegura)
+    {
+        emChuvaDeMeteoros = true;
+        faixaSeguraDaChuva = faixaSegura;
+        proximaFileiraDeMoedasDaChuva = Mathf.Max(proximoZ, jogador.transform.position.z + 18f);
+        for (int i = itens.Count - 1; i >= 0; i--)
+        {
+            if (itens[i] == null || itens[i].tipo != TipoItem.Obstaculo) continue;
+            itens[i].gameObject.SetActive(false);
+            Remover(i);
+        }
+        if (inimigoAtual != null)
+        {
+            inimigoAtual.gameObject.SetActive(false);
+            Destroy(inimigoAtual.gameObject);
+            inimigoAtual = null;
+        }
+    }
+
+    public void SairDaChuvaDeMeteoros()
+    {
+        if (!emChuvaDeMeteoros) return;
+        emChuvaDeMeteoros = false;
+        GameManager jogo = GameManager.Instancia;
+        if (jogo == null || jogador == null) return;
+        float margem = Mathf.Min(distanciaVisao - 1f, jogo.VelocidadePrevista(45f) * 1.4f + 5f);
+        proximoZ = jogador.transform.position.z + Mathf.Max(4f, margem);
+        proximoInimigo = Mathf.Max(proximoInimigo, jogo.TempoDeJogo + 4f);
+    }
+
     /// <summary>Gera um meteoro que cai numa faixa, com espaço para desviar.</summary>
     public void CriarMeteoro(float z)
     {
+        if (emChuvaDeMeteoros) return;
+        // Não ocupa a faixa livre de uma sequência perto da sua fileira.
+        foreach (TrackItem obstaculo in itens)
+            if (obstaculo != null && obstaculo.obstaculoSolar != null && Mathf.Abs(obstaculo.transform.position.z - z) < 7f) return;
+
         List<int> livres = new List<int>();
         for (int faixa = 0; faixa < Faixas; faixa++)
         {
@@ -877,3 +863,4 @@ public class ObstacleSpawner : MonoBehaviour
         return item;
     }
 }
+

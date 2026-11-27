@@ -66,14 +66,33 @@ public class CameraFollow : MonoBehaviour
         instancia.tremorForca = Mathf.Max(instancia.tremorForca, forca);
     }
 
+    Vector3 PosicaoDaCorrida() => new Vector3(
+        alvo.position.x * acompanhamentoLateral + deslocamento.x,
+        deslocamento.y,
+        alvo.position.z + deslocamento.z);
+
+    float CampoDeVisaoDaCorrida()
+    {
+        GameManager jogo = GameManager.Instancia;
+        return Mathf.Lerp(fovNormal, fovRapido, jogo != null ? jogo.Dificuldade : 0f);
+    }
+
+    public void EnquadrarAbertura(float progresso)
+    {
+        if (alvo == null || cam == null) return;
+        float distanciaDaCorrida = 1f - progresso;
+        Vector3 posicao = PosicaoDaCorrida() + new Vector3(3.6f, 6.8f, -6.5f) * distanciaDaCorrida;
+        Quaternion rotacao = Quaternion.Euler(inclinacao + 13f * distanciaDaCorrida,
+            -8f * distanciaDaCorrida, -2.4f * distanciaDaCorrida);
+        transform.SetPositionAndRotation(posicao, rotacao);
+        cam.fieldOfView = Mathf.Lerp(49f, CampoDeVisaoDaCorrida(), progresso);
+    }
+
     void LateUpdate()
     {
         if (alvo == null) return;
 
-        Vector3 p = new Vector3(
-            alvo.position.x * acompanhamentoLateral + deslocamento.x,
-            deslocamento.y,
-            alvo.position.z + deslocamento.z);
+        Vector3 p = PosicaoDaCorrida();
 
         float agora = Time.unscaledTime;
         if (agora < tremorAte && Time.timeScale > 0f)

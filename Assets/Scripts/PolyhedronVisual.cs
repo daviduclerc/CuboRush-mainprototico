@@ -9,6 +9,7 @@ public static class PolyhedronVisual
     static readonly Dictionary<Color, Material> materiaisNeon = new Dictionary<Color, Material>();
     const float LarguraNeon = 0.035f;
 
+    static readonly Dictionary<Color, Material> bordasColoridas = new Dictionary<Color, Material>();
     static readonly Dictionary<int, Mesh> malhas = new Dictionary<int, Mesh>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -32,11 +33,14 @@ public static class PolyhedronVisual
         objeto.AddComponent<MeshFilter>().sharedMesh = Malha(forma, lados);
         if (!materiaisVisiveis.TryGetValue(cor, out Material material) || material == null)
         {
-            Color baseVisivel = Color.Lerp(cor, Color.white, 0.15f);
-            material = new Material(Visual.MatMetal(baseVisivel, 0.38f));
+            Color baseVisivel = cor;
+            material = new Material(TechObstacleMaterials.Obter(false));
+            material.color = baseVisivel * 1.6f;
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", baseVisivel * 1.6f);
             material.name = "Liga visivel dos obstaculos";
             material.EnableKeyword("_EMISSION");
-            material.SetColor("_EmissionColor", baseVisivel * 0.6f);
+            material.SetColor("_EmissionColor", baseVisivel * 2.8f);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.25f);
             if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.55f);
             materiaisVisiveis[cor] = material;
         }
@@ -187,3 +191,5 @@ public static class PolyhedronVisual
         indices.Add(inicio); indices.Add(inicio + 1); indices.Add(inicio + 2);
     }
 }
+
+

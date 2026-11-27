@@ -1,9 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Planeta ou estrela ao lado da pista para o estilingue gravitacional: passar rente
-/// a ele (na faixa da borda daquele lado) dá um impulso de velocidade e pontos extras,
-/// a mesma manobra que as sondas espaciais usam. Setas no chão marcam a faixa certa.
+/// Asteroide ao lado da pista para o estilingue gravitacional. Passar rente
+/// a ele dá velocidade e pontos extras. As setas no chão marcam a faixa certa.
 /// A avaliação da passagem fica no ObstacleSpawner (TipoItem.Estilingue).
 /// </summary>
 public sealed class EstilingueGravitacional : MonoBehaviour
@@ -20,8 +19,9 @@ public sealed class EstilingueGravitacional : MonoBehaviour
     static void Reiniciar() => avisos = 0;
 
     Transform corpo, halo;
-    Material[] materiais;
-    float raio = 2.5f;
+    Mesh malhaRocha;
+    Material materialRocha, materialHalo;
+    float raio;
     float clarao;
     bool avisado;
 
@@ -38,57 +38,39 @@ public sealed class EstilingueGravitacional : MonoBehaviour
 
     void Construir(float z)
     {
-        int tipo = Random.Range(0, 3);
-        Material superficie;
-        Color corHalo;
-        switch (tipo)
-        {
-            case 0: // gigante gasoso
-                raio = 3f;
-                superficie = MaterialPlaneta("Space/jupiter_nasa", new Color(1f, 0.85f, 0.7f));
-                corHalo = new Color(1.3f, 0.72f, 0.3f);
-                break;
-            case 1: // estrela azul
-                raio = 2.1f;
-                superficie = new Material(Visual.Mat(new Color(0.55f, 0.75f, 1f), true));
-                if (superficie.HasProperty("_EmissionColor"))
-                    superficie.SetColor("_EmissionColor", new Color(0.55f, 0.75f, 1f) * 1.6f);
-                corHalo = new Color(0.55f, 0.85f, 2f);
-                break;
-            default: // planeta rochoso com oceanos
-                raio = 2.4f;
-                superficie = MaterialPlaneta("Space/earth_nasa", Color.white);
-                corHalo = new Color(0.3f, 0.75f, 1.5f);
-                break;
-        }
-        cor = new Color(Mathf.Clamp01(corHalo.r), Mathf.Clamp01(corHalo.g), Mathf.Clamp01(corHalo.b));
+        raio = Random.Range(2.1f, 3f);
+        cor = new Color(1f, 0.72f, 0.3f);
 
         float meiaPista = jogador.quantidadeFaixas * jogador.larguraFaixa / 2f;
         transform.position = new Vector3(lado * (meiaPista + 0.8f + raio), 1.1f, z);
 
-        GameObject esfera = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        esfera.name = "CorpoCeleste";
-        Destroy(esfera.GetComponent<Collider>());
-        esfera.transform.SetParent(transform, false);
-        esfera.transform.localScale = Vector3.one * raio * 2f;
-        esfera.transform.localRotation = Quaternion.Euler(18f, 0f, -12f);
-        esfera.GetComponent<Renderer>().sharedMaterial = superficie;
-        corpo = esfera.transform;
+        var asteroide = new GameObject("Asteroide do estilingue");
+        corpo = asteroide.transform;
+        corpo.SetParent(transform, false);
+        corpo.localRotation = Random.rotation;
+        malhaRocha = MalhasEstelares.CriarRocha(Random.Range(0, 1000000));
+        float raioDaMalhaQuadrado = 0.0001f;
+        foreach (Vector3 vertice in malhaRocha.vertices)
+            raioDaMalhaQuadrado = Mathf.Max(raioDaMalhaQuadrado, vertice.sqrMagnitude);
+        corpo.localScale = Vector3.one * (raio / Mathf.Sqrt(raioDaMalhaQuadrado));
+        asteroide.AddComponent<MeshFilter>().sharedMesh = malhaRocha;
+        Shader shaderRocha = Resources.Load<Shader>("Space/RochaEspacial");
+        materialRocha = shaderRocha != null ? new Material(shaderRocha) : new Material(Visual.Mat(Color.gray));
+        asteroide.AddComponent<MeshRenderer>().sharedMaterial = materialRocha;
 
-        // Halo mais contido: com o bloom forte, o valor cheio virava uma mancha branca que
-        // competia com o buraco negro.
-        Material matHalo = Halos.Novo(corHalo * 0.6f, 0.52f, 1f, 2.2f, 0f, 0f);
+        materialHalo = Halos.Novo(cor * 0.6f, 0.52f, 1f, 2.2f, 0f, 0f);
         GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        quad.name = "Atmosfera";
+        quad.name = "Clarão do impulso";
         Destroy(quad.GetComponent<Collider>());
         quad.transform.SetParent(transform, false);
         quad.transform.localScale = Vector3.one * raio * 3.4f;
         Renderer r = quad.GetComponent<Renderer>();
-        r.sharedMaterial = matHalo;
+        r.sharedMaterial = materialHalo;
         r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         halo = quad.transform;
+        quad.SetActive(false);
 
-        // Setas no chão da faixa rente, apontando para a frente, logo antes do planeta.
+        // Setas na faixa mais próxima, antes do asteroide.
         Material matSeta = Visual.Mat(cor, true);
         float xFaixa = jogador.PosicaoXDaFaixa(FaixaRente) - transform.position.x;
         for (int i = 0; i < 5; i++)
@@ -103,27 +85,6 @@ public sealed class EstilingueGravitacional : MonoBehaviour
                 barra.GetComponent<Renderer>().sharedMaterial = matSeta;
             }
         }
-        materiais = new[] { superficie, matHalo };
-    }
-
-    static Material MaterialPlaneta(string caminho, Color tinta)
-    {
-        Material m = new Material(Visual.MatMetal(Color.white, 0f));
-        m.name = "Superficie do planeta";
-        Texture2D mapa = Resources.Load<Texture2D>(caminho);
-        m.color = tinta;
-        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", tinta);
-        if (mapa != null)
-        {
-            m.mainTexture = mapa;
-            if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", mapa);
-            // Um pouco de brilho próprio para o lado escuro não sumir no vazio.
-            m.EnableKeyword("_EMISSION");
-            if (m.HasProperty("_EmissionMap")) m.SetTexture("_EmissionMap", mapa);
-            if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", tinta * 0.35f);
-        }
-        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.25f);
-        return m;
     }
 
     /// <summary>Chamado quando o Sol passa rente: o halo dá um clarão.</summary>
@@ -149,15 +110,20 @@ public sealed class EstilingueGravitacional : MonoBehaviour
 
     void LateUpdate()
     {
+        if (halo == null) return;
+        halo.gameObject.SetActive(clarao > 0f);
+        if (clarao <= 0f) return;
         Camera cam = Camera.main;
-        if (halo == null || cam == null) return;
+        if (cam == null) return;
         halo.rotation = cam.transform.rotation;
         halo.localScale = Vector3.one * raio * (3.4f + 1.2f * clarao);
+        if (materialHalo.HasProperty("_Cor")) materialHalo.SetColor("_Cor", cor * (0.6f * clarao));
     }
 
     void OnDestroy()
     {
-        if (materiais != null)
-            foreach (Material m in materiais) if (m != null) Destroy(m);
+        if (malhaRocha != null) Destroy(malhaRocha);
+        if (materialRocha != null) Destroy(materialRocha);
+        if (materialHalo != null) Destroy(materialHalo);
     }
 }

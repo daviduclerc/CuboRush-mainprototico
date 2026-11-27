@@ -2,29 +2,41 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// HUD em cartão no canto superior direito: pontos em destaque, moedas, recorde,
-/// barras de vida e estabilidade e etiquetas dos power-ups ativos.
-/// A moldura acompanha a cor atual do Sol. Tudo fica dentro da área segura da tela.
+/// Vida e estabilidade orbitais à esquerda. Pontos, moedas, recorde, metas
+/// e power-ups ficam à direita, dentro da área segura da tela.
 /// </summary>
 public sealed class GameplayHud : MonoBehaviour
 {
     const float Largura = 300f;
     const float Margem = 16f;
-    const float AlturaBase = 150f;
+    const float AlturaBase = 124f;
+    const float LarguraVitais = 384f;
+    const float AlturaVitais = 188f;
+    const float AlturaDoAlerta = 36f;
+    const float AlturaOrbita = 160f;
+    const float TopoOrbita = 8f;
+    const float EscalaVitais = 1.15f;
+    const float PerspectivaVitais = 0.68f;
+    static readonly Color VidaVerde = new Color(0.12f, 1f, 0.24f);
+    static readonly Color VidaAmarela = new Color(1f, 0.85f, 0.06f);
+    static readonly Color VidaVermelha = new Color(1f, 0.10f, 0.14f);
 
     GameManager jogo;
     Canvas canvas;
     CanvasGroup grupo;
     float aparicao;
     PlayerController jogador;
-    RectTransform raiz, areaSegura, painel, linhaChips;
+    RectTransform raiz, areaSegura, painel, painelVitais, linhaChips;
     Image moldura, brilhoTopo, iconeMoeda;
-    Text textoPontos, textoMoedas, textoRecorde;
-    Barra barraVida, barraEstabilidade;
+    Text textoPontos, textoMoedas, textoRecorde, textoMetas, rotuloVida, percentualVida, percentualEstabilidade;
+    Text rotuloEstabilidade, avisoEstabilidade;
+    Material materialVitais;
     readonly Chip[] chips = new Chip[3];
 
     int moedasAnteriores;
     float pulsoMoeda;
+    int nivelAlertaAnterior;
+    float inicioAlertaEstabilidade = -10f;
 
     // Aviso no alto da tela (ondas, estilingue, atração...).
     static GameplayHud instancia;
@@ -46,14 +58,6 @@ public sealed class GameplayHud : MonoBehaviour
         instancia.corAviso = cor;
         instancia.inicioAviso = Time.unscaledTime;
         instancia.duracaoAviso = duracao;
-    }
-
-    sealed class Barra
-    {
-        public Text rotulo, valor;
-        public RectTransform trilho, preenchimento;
-        public Image imagem;
-        public float exibido = 1f;
     }
 
     sealed class Chip
@@ -79,6 +83,7 @@ public sealed class GameplayHud : MonoBehaviour
         escala.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
         escala.matchWidthOrHeight = 0.5f;
         areaSegura = NovoRect("Area segura", raiz);
+        CriarVitais();
 
         painel = NovoRect("Cartao do HUD", areaSegura);
         painel.anchorMin = painel.anchorMax = painel.pivot = new Vector2(1f, 1f);
@@ -128,11 +133,10 @@ public sealed class GameplayHud : MonoBehaviour
         Posicionar(separador, 72f, 1f);
         Imagem(separador, null, new Color(1f, 1f, 1f, 0.07f), 1f);
 
-        barraVida = NovaBarra("VIDA", 82f, EstiloUI.Verde);
-        barraEstabilidade = NovaBarra("ESTABILIDADE", 114f, EstiloUI.Ciano);
-
+        textoMetas = NovoTexto("", painel, 12, EstiloUI.TextoSuave, TextAnchor.MiddleLeft);
+        Posicionar(textoMetas.rectTransform, 82f, 34f);
         linhaChips = NovoRect("Power-ups ativos", painel);
-        Posicionar(linhaChips, 148f, 22f);
+        Posicionar(linhaChips, 122f, 22f);
         for (int i = 0; i < chips.Length; i++) chips[i] = NovoChip(linhaChips);
 
         if (jogo != null) moedasAnteriores = jogo.Moedas;
@@ -173,7 +177,8 @@ public sealed class GameplayHud : MonoBehaviour
     {
         if (textoAviso == null) return;
         float t = Time.unscaledTime - inicioAviso;
-        bool visivel = t >= 0f && t < duracaoAviso && jogo != null && jogo.Estado != EstadoJogo.Menu;
+        bool visivel = t >= 0f && t < duracaoAviso && jogo != null &&
+            jogo.Estado != EstadoJogo.Menu && !jogo.EmResultado;
         if (textoAviso.gameObject.activeSelf != visivel) textoAviso.gameObject.SetActive(visivel);
         if (!visivel) return;
         // Entra crescendo rápido, fica parado e some no fim.
@@ -185,16 +190,30 @@ public sealed class GameplayHud : MonoBehaviour
 
     void Atualizar()
     {
-        grupo.alpha = jogo != null && jogo.Estado != EstadoJogo.Menu ? 1f : aparicao;
+        grupo.alpha = jogo == null || jogo.EmResultado ? 0f :
+            jogo.Estado == EstadoJogo.Menu ? aparicao : 1f;
         bool mostrar = grupo.alpha > 0f;
         painel.gameObject.SetActive(mostrar);
+        painelVitais.gameObject.SetActive(mostrar);
+
+        float estabilidade = jogo != null ? Mathf.Clamp(jogo.Estabilidade, 0f, 100f) : 0f;
+        int nivelAlerta = mostrar && jogo.Estado != EstadoJogo.Menu && estabilidade > 0f
+            ? (estabilidade < 15f ? 3 : estabilidade < 30f ? 2 : estabilidade < 60f ? 1 : 0)
+            : 0;
+        AtualizarAlertaEstabilidade(nivelAlerta);
         if (!mostrar) return;
 
         AjustarAreaSegura(out float larguraDisponivel, out float alturaDisponivel);
 
         int quantidadeBuffs = (jogo.TemEscudo ? 1 : 0) + (jogo.TempoIma > 0f ? 1 : 0) + (jogo.TempoDobro > 0f ? 1 : 0);
         float alturaPainel = AlturaBase + (quantidadeBuffs > 0 ? 32f : 0f);
-        float reducao = Mathf.Min(1f, larguraDisponivel / (Largura + 48f), alturaDisponivel / (alturaPainel + 40f));
+        float alturaVitais = AlturaVitais + (nivelAlerta > 0 ? AlturaDoAlerta : 0f);
+        float alturaDosPaineis = Mathf.Max(alturaPainel, alturaVitais * EscalaVitais);
+        float reducao = Mathf.Min(1f, larguraDisponivel / (Largura + LarguraVitais * EscalaVitais + 64f),
+            alturaDisponivel / (alturaDosPaineis + 40f));
+        painelVitais.localScale = Vector3.one * (reducao * EscalaVitais);
+        painelVitais.sizeDelta = new Vector2(LarguraVitais, alturaVitais);
+        painelVitais.anchoredPosition = new Vector2(24f, -20f) * reducao;
         painel.localScale = Vector3.one * reducao;
         painel.sizeDelta = new Vector2(Largura, alturaPainel);
         painel.anchoredPosition = new Vector2(-24f * reducao, -20f * reducao);
@@ -208,7 +227,8 @@ public sealed class GameplayHud : MonoBehaviour
         brilhoTopo.color = new Color(corSol.r, corSol.g, corSol.b, 0.95f);
 
         // Pontos, recorde e moedas (com um pulo rápido a cada moeda nova).
-        textoPontos.text = Mathf.FloorToInt(jogo.Pontos).ToString("N0").Replace(',', '.');
+        int pontos = Mathf.FloorToInt(jogo.Pontos);
+        textoPontos.text = pontos.ToString("N0").Replace(',', '.');
         textoRecorde.text = "RECORDE  " + jogo.Recorde.ToString("N0").Replace(',', '.');
         if (jogo.Moedas != moedasAnteriores)
         {
@@ -217,16 +237,16 @@ public sealed class GameplayHud : MonoBehaviour
         }
         pulsoMoeda = Mathf.MoveTowards(pulsoMoeda, 0f, Time.unscaledDeltaTime * 4f);
         textoMoedas.text = jogo.Moedas.ToString();
+        textoMetas.text = $"META   {Mathf.Min(jogo.Moedas, GameManager.MetaMoedas)}/{GameManager.MetaMoedas} MOEDAS   ·   " +
+            $"{Mathf.Min(pontos, GameManager.MetaPontos)}/{GameManager.MetaPontos} PTS\n" +
+            $"{Mathf.Min(jogo.RaidsSuperadas, GameManager.MetaRaids)}/{GameManager.MetaRaids} RAIDS DE METEOROS";
         float escalaMoeda = 1f + 0.45f * Mathf.Sin(pulsoMoeda * Mathf.PI);
         iconeMoeda.rectTransform.localScale = Vector3.one * escalaMoeda;
         textoMoedas.color = Color.Lerp(EstiloUI.Ouro, Color.white, pulsoMoeda * 0.8f);
         float larguraMoedas = textoMoedas.preferredWidth;
         iconeMoeda.rectTransform.anchoredPosition = new Vector2(-Margem - larguraMoedas - 14f, -47f);
 
-        // Barras.
-        float vida = jogador != null ? Mathf.Clamp01(jogador.Vida / PlayerController.VidaMaxima) : 1f;
-        AtualizarBarra(barraVida, vida, EstiloUI.Verde);
-        AtualizarBarra(barraEstabilidade, Mathf.Clamp01(jogo.Estabilidade / 100f), EstiloUI.Ciano);
+        AtualizarVitais(estabilidade);
 
         // Etiquetas dos power-ups, lado a lado.
         float x = 0f;
@@ -253,19 +273,65 @@ public sealed class GameplayHud : MonoBehaviour
         larguraDisponivel = (x1 - x0) / escala;
     }
 
-    void AtualizarBarra(Barra barra, float nivel, Color saudavel)
+    void AtualizarVitais(float estabilidade)
     {
-        // A barra desliza até o valor real em vez de pular.
-        barra.exibido = Mathf.Lerp(barra.exibido, nivel, 1f - Mathf.Exp(-10f * Time.unscaledDeltaTime));
-        Color cor = EstiloUI.CorDoNivel(nivel, saudavel);
-        float total = Largura - 2f * Margem;
-        float largura = total * barra.exibido;
-        barra.preenchimento.gameObject.SetActive(largura > 1f);
-        barra.preenchimento.sizeDelta = new Vector2(Mathf.Max(8f, largura), 8f);
-        barra.imagem.color = cor;
-        barra.rotulo.color = Color.Lerp(EstiloUI.TextoSuave, cor, 0.45f);
-        barra.valor.color = cor;
-        barra.valor.text = Mathf.CeilToInt(nivel * 100f) + "%";
+        float vida = jogador != null ? Mathf.Clamp(jogador.Vida, 0f, PlayerController.VidaMaxima) : PlayerController.VidaMaxima;
+        float nivel = vida / PlayerController.VidaMaxima;
+        Color corVida = nivel > 0.50f ? VidaVerde : nivel > 0.30f ? VidaAmarela : VidaVermelha;
+        percentualVida.text = Mathf.CeilToInt(vida * 100f / PlayerController.VidaMaxima) + "%";
+        percentualEstabilidade.text = Mathf.CeilToInt(estabilidade) + "%";
+        rotuloVida.color = corVida;
+
+        if (materialVitais == null) return;
+        materialVitais.SetFloat("_Life", nivel);
+        materialVitais.SetColor("_LifeColor", corVida);
+        materialVitais.SetFloat("_Fill", estabilidade / 100f);
+        materialVitais.SetColor("_SunColor", CorDaEstabilidade(estabilidade));
+    }
+
+    void AtualizarAlertaEstabilidade(int nivel)
+    {
+        avisoEstabilidade.gameObject.SetActive(nivel > 0);
+        if (nivel == 0)
+        {
+            rotuloEstabilidade.color = Color.white;
+            nivelAlertaAnterior = 0;
+            return;
+        }
+
+        float agora = jogo.TempoDeJogo;
+        if (nivel > nivelAlertaAnterior && jogo.Estado == EstadoJogo.Jogando &&
+            (agora - inicioAlertaEstabilidade >= 4f || nivel == 3))
+            inicioAlertaEstabilidade = agora;
+        (string titulo, Color cor) = nivel switch
+        {
+            1 => ("ATENÇÃO: ESTABILIDADE BAIXA", new Color(1f, 0.75f, 0.18f)),
+            2 => ("PERIGO: ESTABILIDADE CRÍTICA", new Color(1f, 0.38f, 0.12f)),
+            _ => ("URGENTE: COLAPSO IMINENTE", new Color(1f, 0.32f, 0.36f))
+        };
+
+        if (nivel != nivelAlertaAnterior)
+        {
+            avisoEstabilidade.text = titulo + "\nCOLETE MOEDAS DA SUA COR";
+            rotuloEstabilidade.color = cor;
+            nivelAlertaAnterior = nivel;
+        }
+        float idade = agora - inicioAlertaEstabilidade;
+        if (idade >= 0f && idade < 1.5f) cor.a = 0.65f + 0.35f * Mathf.Abs(Mathf.Cos(idade * 8f));
+        avisoEstabilidade.color = cor;
+    }
+
+    static Color CorDaEstabilidade(float nivel)
+    {
+        Color vermelho = new Color(1f, 0.08f, 0.12f);
+        Color laranja = new Color(1f, 0.40f, 0.06f);
+        Color amarelo = new Color(1f, 0.85f, 0.08f);
+        Color ciano = new Color(0.04f, 0.90f, 1f);
+        Color azul = new Color(0.12f, 0.40f, 1f);
+        if (nivel <= 30f) return Color.Lerp(vermelho, laranja, nivel / 30f);
+        if (nivel <= 60f) return Color.Lerp(laranja, amarelo, (nivel - 30f) / 30f);
+        if (nivel <= 80f) return Color.Lerp(amarelo, ciano, (nivel - 60f) / 20f);
+        return Color.Lerp(ciano, azul, (nivel - 80f) / 20f);
     }
 
     float MostrarChip(int indice, string texto, Color cor, float x)
@@ -284,23 +350,58 @@ public sealed class GameplayHud : MonoBehaviour
 
     // ---------- Construção ----------
 
-    Barra NovaBarra(string nome, float topo, Color cor)
+    void CriarVitais()
     {
-        var barra = new Barra();
-        barra.rotulo = NovoTexto(nome, painel, 12, EstiloUI.TextoSuave, TextAnchor.MiddleLeft);
-        Posicionar(barra.rotulo.rectTransform, topo, 16f);
-        barra.valor = NovoTexto("100%", painel, 13, cor, TextAnchor.MiddleRight);
-        Posicionar(barra.valor.rectTransform, topo, 16f);
+        painelVitais = NovoRect("Painel orbital de vida e estabilidade", areaSegura);
+        painelVitais.anchorMin = painelVitais.anchorMax = painelVitais.pivot = new Vector2(0f, 1f);
+        painelVitais.sizeDelta = new Vector2(LarguraVitais, AlturaVitais);
 
-        barra.trilho = NovoRect("Trilho " + nome, painel);
-        Posicionar(barra.trilho, topo + 19f, 8f);
-        Imagem(barra.trilho, EstiloUI.SpriteArredondado, new Color(1f, 1f, 1f, 0.08f), 5f);
+        var orbita = NovoRect("Indicadores orbitais", painelVitais);
+        orbita.anchorMin = orbita.anchorMax = orbita.pivot = new Vector2(0.5f, 1f);
+        orbita.anchoredPosition = Vector2.down * TopoOrbita;
+        orbita.sizeDelta = new Vector2(LarguraVitais, AlturaOrbita);
 
-        barra.preenchimento = NovoRect("Nivel " + nome, barra.trilho);
-        barra.preenchimento.anchorMin = barra.preenchimento.anchorMax = barra.preenchimento.pivot = new Vector2(0f, 0.5f);
-        barra.preenchimento.anchoredPosition = Vector2.zero;
-        barra.imagem = Imagem(barra.preenchimento, EstiloUI.SpriteArredondado, cor, 5f);
-        return barra;
+        Shader shader = Resources.Load<Shader>("Gameplay/OrbitalVitals");
+        if (shader != null)
+        {
+            var imagem = orbita.gameObject.AddComponent<RawImage>();
+            imagem.raycastTarget = false;
+            imagem.texture = Resources.Load<Texture2D>("Sol3D/Fotosfera");
+            materialVitais = new Material(shader) { name = "Vida e estabilidade orbitais" };
+            materialVitais.SetFloat("_FarScale", PerspectivaVitais);
+            imagem.material = materialVitais;
+        }
+
+        rotuloVida = NovoTexto("VIDA", painelVitais, 12, VidaVerde, TextAnchor.MiddleCenter);
+        Posicionar(rotuloVida.rectTransform, 0f, 16f);
+        rotuloVida.gameObject.AddComponent<HudPerspectiveText>().Configurar(orbita, PerspectivaVitais);
+        rotuloEstabilidade = NovoTexto("ESTABILIDADE", painelVitais, 12, Color.white, TextAnchor.MiddleCenter);
+        Posicionar(rotuloEstabilidade.rectTransform, TopoOrbita + AlturaOrbita, 16f);
+        rotuloEstabilidade.gameObject.AddComponent<HudPerspectiveText>().Configurar(orbita, PerspectivaVitais);
+
+        percentualVida = CriarPercentual(orbita, 20f);
+        percentualEstabilidade = CriarPercentual(orbita, -20f);
+
+        avisoEstabilidade = NovoTexto("", painelVitais, 13, Color.white, TextAnchor.MiddleCenter);
+        avisoEstabilidade.gameObject.name = "Alerta de estabilidade";
+        avisoEstabilidade.fontStyle = FontStyle.Bold;
+        Posicionar(avisoEstabilidade.rectTransform, AlturaVitais, AlturaDoAlerta);
+        avisoEstabilidade.gameObject.AddComponent<HudPerspectiveText>().Configurar(orbita, PerspectivaVitais);
+        avisoEstabilidade.gameObject.SetActive(false);
+    }
+
+    static Text CriarPercentual(RectTransform orbita, float y)
+    {
+        Text texto = NovoTexto("100%", orbita, 20, Color.white, TextAnchor.MiddleCenter);
+        RectTransform percentual = texto.rectTransform;
+        percentual.anchorMin = percentual.anchorMax = percentual.pivot = new Vector2(0.5f, 0.5f);
+        percentual.anchoredPosition = Vector2.up * y;
+        percentual.sizeDelta = new Vector2(100f, 28f);
+        var contorno = texto.gameObject.AddComponent<Outline>();
+        contorno.effectColor = Color.black;
+        contorno.effectDistance = new Vector2(1.5f, -1.5f);
+        texto.gameObject.AddComponent<HudPerspectiveText>().Configurar(orbita, PerspectivaVitais);
+        return texto;
     }
 
     Chip NovoChip(Transform pai)
@@ -377,6 +478,7 @@ public sealed class GameplayHud : MonoBehaviour
     void OnEnable() { if (raiz != null) raiz.gameObject.SetActive(true); }
     void OnDestroy()
     {
+        if (materialVitais != null) Destroy(materialVitais);
         if (raiz != null) Destroy(raiz.gameObject);
     }
 }

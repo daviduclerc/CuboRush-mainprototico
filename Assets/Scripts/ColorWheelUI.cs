@@ -24,7 +24,7 @@ public sealed class ColorWheelUI : MonoBehaviour
     {
         if (raiz != null) return;
         jogador = dono;
-        fonte = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        fonte = EstiloUI.Fonte;
         // Canvas próprio fora da hierarquia que gira e achata o personagem.
         raiz = Rect("Roda de cores", null);
         canvas = raiz.gameObject.AddComponent<Canvas>();

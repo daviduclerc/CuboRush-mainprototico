@@ -588,19 +588,26 @@ public class PlayerController : MonoBehaviour
     /// <summary>Aplica dano e ativa a piscada de invulnerabilidade temporária.</summary>
     public bool ReceberDano(float quantidade)
     {
-        if (morto || Invencivel || Vida <= 0f) return false;
+        if (morto || Invencivel || Vida <= 0f || GameManager.Instancia?.EmResultado == true) return false;
         Vida = Mathf.Max(0f, Vida - Mathf.Max(0f, quantidade));
         FicarInvencivel(DuracaoInvulnerabilidadeDano);
-        if (Vida <= 0f)
-        {
-            GameManager.Instancia?.FimDeJogo();
-            Morrer();
-        }
+        if (Vida <= 0f) Morrer();
         return true;
     }
 
-    /// <summary>Esconde o Sol e dispara uma pequena explosão de plasma.</summary>
     public void Morrer()
+    {
+        GameManager.Instancia?.FimDeJogo();
+    }
+
+    internal void PrepararVisualDaMorte()
+    {
+        foreach (Renderer parte in visuais)
+            if (parte != null) parte.enabled = true;
+        if (orbeEscudo != null) orbeEscudo.gameObject.SetActive(false);
+    }
+
+    internal void EsconderVisualDaMorte()
     {
         if (morto) return;
         morto = true;
@@ -609,8 +616,6 @@ public class PlayerController : MonoBehaviour
         for (int i = 0; i < visuais.Length; i++)
             if (visuais[i] != null) visuais[i].enabled = false;
         if (orbeEscudo != null) orbeEscudo.gameObject.SetActive(false);
-        Vector3 centro = Limites.center;
-        SolarDeathExplosion.Criar(centro, CorAtual, visualSolar ? 1f : 0.6f);
     }
 
     void LateUpdate()

@@ -2,9 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Cenário da arte de referência: asteroides escuros com contraluz laranja do buraco negro
-/// e cristais luminosos flutuando dos dois lados da pista. Tudo é só decoração (sem colisão)
-/// e é reciclado para a frente conforme o jogador avança.
+/// Asteroides decorativos com contraluz do buraco negro, reciclados
+/// para a frente conforme o jogador avança.
 /// Lá na frente eles estão presos pela atração do buraco negro (AtracaoDoBuracoNegro):
 /// são puxados em espiral em direção a ele, esticados e engolidos além do limite de visão.
 /// </summary>
@@ -13,26 +12,13 @@ public class CampoDeAsteroides : MonoBehaviour
     public Transform jogador;
     [Tooltip("Metade da largura da pista; nada é criado dentro dela.")]
     public float meiaLarguraPista = 5f;
-    public int quantidade = 80;
-    [Range(0f, 1f)] public float proporcaoCristais = 0.22f;
+    public int quantidade = 64;
     [Tooltip("Distância extra a partir da borda da pista (mínima e máxima).")]
     public Vector2 distanciaLateral = new Vector2(4.5f, 42f);
     public Vector2 altura = new Vector2(-9f, 16f);
     [Tooltip("Até onde à frente os corpos existem. Passando do limite de visão, só ficam escondidos.")]
     public float profundidade = 95f;
     public Vector2 escala = new Vector2(0.45f, 3.2f);
-
-    // Mesmas cores dos cristais da referência: vermelho, roxo, laranja e rosa.
-    static readonly Color[] coresBorda =
-    {
-        new Color(1.4f, 0.22f, 0.32f), new Color(0.85f, 0.38f, 1.5f),
-        new Color(1.5f, 0.72f, 0.18f), new Color(1.5f, 0.32f, 0.9f)
-    };
-    static readonly Color[] coresInternas =
-    {
-        new Color(0.55f, 0.03f, 0.1f), new Color(0.26f, 0.05f, 0.5f),
-        new Color(0.6f, 0.2f, 0.02f), new Color(0.5f, 0.04f, 0.32f)
-    };
 
     sealed class Corpo
     {
@@ -47,48 +33,33 @@ public class CampoDeAsteroides : MonoBehaviour
         public Quaternion rotacao;
         public Vector3 eixoGiro;
         public float velGiro;
-        public bool cristal;
     }
 
     readonly List<Corpo> corpos = new List<Corpo>();
-    readonly List<Mesh> malhasCriadas = new List<Mesh>();
-    readonly List<Material> materiaisCriados = new List<Material>();
+    readonly Mesh[] rochas = new Mesh[6];
+    Material materialRocha;
 
     void Start()
     {
-        var rochas = new Mesh[6];
-        for (int i = 0; i < rochas.Length; i++) malhasCriadas.Add(rochas[i] = MalhasEstelares.CriarRocha(300 + i * 17));
-        var cristais = new Mesh[4];
-        for (int i = 0; i < cristais.Length; i++) malhasCriadas.Add(cristais[i] = MalhasEstelares.CriarCristal(900 + i * 41));
-
-        Material matRocha = NovoMaterial("Space/RochaEspacial");
-        var matCristais = new Material[coresBorda.Length];
-        for (int i = 0; i < matCristais.Length; i++)
-        {
-            matCristais[i] = NovoMaterial("Space/CristalEspacial");
-            if (matCristais[i] == null) continue;
-            matCristais[i].SetColor("_Cor", coresBorda[i]);
-            matCristais[i].SetColor("_CorInterna", coresInternas[i]);
-        }
-        if (matRocha == null)
+        Shader shader = Resources.Load<Shader>("Space/RochaEspacial");
+        if (shader == null)
         {
             Debug.LogWarning("CampoDeAsteroides: shader Space/RochaEspacial não encontrado.");
             return;
         }
+        materialRocha = new Material(shader);
+        for (int i = 0; i < rochas.Length; i++) rochas[i] = MalhasEstelares.CriarRocha(300 + i * 17);
 
         float zBase = jogador != null ? jogador.position.z : 0f;
         for (int i = 0; i < quantidade; i++)
         {
-            bool cristal = Random.value < proporcaoCristais && matCristais[0] != null;
-            var pivo = new GameObject(cristal ? "CristalFlutuante" : "Asteroide").transform;
+            var pivo = new GameObject("Asteroide").transform;
             pivo.SetParent(transform, false);
             var go = new GameObject("Malha");
             go.transform.SetParent(pivo, false);
-            go.AddComponent<MeshFilter>().sharedMesh = cristal
-                ? cristais[Random.Range(0, cristais.Length)]
-                : rochas[Random.Range(0, rochas.Length)];
+            go.AddComponent<MeshFilter>().sharedMesh = rochas[Random.Range(0, rochas.Length)];
             var render = go.AddComponent<MeshRenderer>();
-            render.sharedMaterial = cristal ? matCristais[Random.Range(0, matCristais.Length)] : matRocha;
+            render.sharedMaterial = materialRocha;
             render.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             render.receiveShadows = false;
 
@@ -99,22 +70,12 @@ public class CampoDeAsteroides : MonoBehaviour
                 render = render,
                 eixoGiro = Random.onUnitSphere,
                 // Giro lento: girando rápido, as facetas pegavam luz e piscavam.
-                velGiro = Random.Range(3f, cristal ? 9f : 12f),
-                cristal = cristal
+                velGiro = Random.Range(3f, 12f)
             };
             corpo.rotacao = Random.rotation;
             Posicionar(corpo, zBase + Random.Range(-10f, profundidade));
             corpos.Add(corpo);
         }
-    }
-
-    Material NovoMaterial(string caminho)
-    {
-        Shader shader = Resources.Load<Shader>(caminho);
-        if (shader == null) return null;
-        var m = new Material(shader);
-        materiaisCriados.Add(m);
-        return m;
     }
 
     void Posicionar(Corpo c, float z)
@@ -128,8 +89,7 @@ public class CampoDeAsteroides : MonoBehaviour
         if (extra < 10f) y = Mathf.Min(y, Random.Range(-6f, 3f));
         c.posicaoBase = new Vector3(x, y, z);
         float s = Mathf.Lerp(escala.x, escala.y, Random.value * Random.value) * (1f + extra / distanciaLateral.y);
-        if (c.cristal) s *= 1.4f;
-        c.escalaBase = c.cristal ? new Vector3(s * 0.8f, s * 1.3f, s * 0.8f) : Vector3.one * s;
+        c.escalaBase = Vector3.one * s;
         c.t.localScale = c.escalaBase;
         Atualizar(c, jogador != null ? jogador.position : Vector3.zero);
     }
@@ -181,7 +141,7 @@ public class CampoDeAsteroides : MonoBehaviour
 
     void OnDestroy()
     {
-        foreach (var m in malhasCriadas) if (m != null) Destroy(m);
-        foreach (var m in materiaisCriados) if (m != null) Destroy(m);
+        foreach (Mesh rocha in rochas) if (rocha != null) Destroy(rocha);
+        if (materialRocha != null) Destroy(materialRocha);
     }
 }

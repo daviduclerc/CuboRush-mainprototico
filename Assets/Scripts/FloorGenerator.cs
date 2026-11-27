@@ -23,13 +23,13 @@ public class FloorGenerator : MonoBehaviour
     public int quantidadePedacos = 9;
 
     [Header("Visual")]
-    // Vidro escuro azul-marinho (os veios roxos vêm do shader ReflectiveTrack).
+    // Tonalidade da pista no material alternativo.
     public Color corPiso = new Color(0.03f, 0.035f, 0.085f);
     public Color corLinhas = new Color(0.025f, 0.18f, 0.42f);
     public float larguraLinha = 0.035f;
 
     [Header("Imagem do piso")]
-    [Tooltip("Imagem usada no vidro do piso. Vazio = procura Resources/Space/PisoImagem; sem imagem, usa o piso procedural.")]
+    [Tooltip("Imagem do piso. Vazio = usa a textura vinílica da pista.")]
     public Texture2D imagemPiso;
     [Tooltip("Largura, em metros, que a imagem cobre. 0 = a largura exata da pista (borda a borda).")]
     public float metrosPorRepeticao = 0f;
@@ -41,6 +41,7 @@ public class FloorGenerator : MonoBehaviour
     [Tooltip("Quanto da imagem participa do fluxo.")]
     [Range(0f, 1f)] public float forcaFluxo = 0.5f;
     Material materialPiso;
+    Texture2D texturaVinilica;
 
     readonly Queue<Transform> pedacos = new Queue<Transform>();
     float proximoZ;
@@ -69,7 +70,9 @@ public class FloorGenerator : MonoBehaviour
         proximoZ = zInicial - comprimentoPedaco;
 
         materialPiso = Visual.MatPisoLiso(corPiso);
-        if (imagemPiso == null) imagemPiso = Resources.Load<Texture2D>("Space/PisoImagem");
+        texturaVinilica = Resources.Load<Texture2D>("Space/PisoVinilico");
+        if (imagemPiso == null)
+            imagemPiso = texturaVinilica != null ? texturaVinilica : Resources.Load<Texture2D>("Space/PisoImagem");
         AplicarImagemDoPiso();
 
         for (int i = 0; i < quantidadePedacos; i++)
@@ -94,10 +97,12 @@ public class FloorGenerator : MonoBehaviour
     {
         if (materialPiso == null) return;
         bool temImagem = imagemPiso != null;
+        bool usarVinil = temImagem && imagemPiso == texturaVinilica;
         materialPiso.SetFloat("_UsarTextura", temImagem ? 1f : 0f);
+        materialPiso.SetFloat("_AcabamentoVinilico", usarVinil ? 1f : 0f);
         if (!temImagem) return;
         // Na largura a imagem não repete (vai de uma borda à outra); no comprimento, repete.
-        TextureWrapMode modo = espelharEmendas ? TextureWrapMode.Mirror : TextureWrapMode.Repeat;
+        TextureWrapMode modo = usarVinil || espelharEmendas ? TextureWrapMode.Mirror : TextureWrapMode.Repeat;
         if (imagemPiso.wrapModeU != TextureWrapMode.Clamp) imagemPiso.wrapModeU = TextureWrapMode.Clamp;
         if (imagemPiso.wrapModeV != modo) imagemPiso.wrapModeV = modo;
         // Filtro anisotrópico: a imagem continua nítida mesmo vista de lado, lá no fundo da pista.
@@ -107,7 +112,7 @@ public class FloorGenerator : MonoBehaviour
         materialPiso.SetFloat("_EscalaTextura", metrosPorRepeticao > 0.01f ? metrosPorRepeticao : larguraPista);
         materialPiso.SetFloat("_AspectoTextura", (float)imagemPiso.height / Mathf.Max(1, imagemPiso.width));
         materialPiso.SetFloat("_BrilhoTextura", brilhoImagem);
-        materialPiso.SetFloat("_FluxoPiso", velocidadeFluxo);
+        materialPiso.SetFloat("_FluxoPiso", usarVinil ? 0f : velocidadeFluxo);
         materialPiso.SetFloat("_ForcaFluxo", forcaFluxo);
     }
 
@@ -131,8 +136,7 @@ public class FloorGenerator : MonoBehaviour
             new Vector3(0f, -0.1f, comprimentoPedaco / 2f),
             new Vector3(larguraTotal, 0.2f, comprimentoPedaco), corPiso, false, true, 0.03f);
 
-        // Liga metálica lisa com guias luminosas longitudinais.
-        piso.GetComponent<Renderer>().sharedMaterial = Visual.MatPisoLiso(corPiso);
+        piso.GetComponent<Renderer>().sharedMaterial = materialPiso;
         piso.GetComponent<MeshFilter>().sharedMesh = MalhaPiso(new Vector3(larguraTotal, 0.2f, comprimentoPedaco));
 
         // Divisas das faixas em ciano; as duas bordas externas da pista em violeta (arte de referência).

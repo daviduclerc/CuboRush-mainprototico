@@ -22,7 +22,6 @@ public sealed class StabilityWorldEffects : MonoBehaviour
     Renderer[] renderNebulosa;
     Material[] materiaisNebulosa;
     Texture2D[] texturasNebulosa;
-    float inicioColapso;
     float proximoPulso;
     float proximoMeteoroZ;
     bool faseMeteoros;
@@ -48,22 +47,25 @@ public sealed class StabilityWorldEffects : MonoBehaviour
 
     void ConfigurarPosProcessamento()
     {
-        Volume volume = Object.FindAnyObjectByType<Volume>();
+        Volume volume = null;
+        foreach (Volume candidato in Object.FindObjectsByType<Volume>())
+            if (candidato.isGlobal && candidato.weight > 0f && (volume == null || candidato.priority < volume.priority))
+                volume = candidato;
         if (volume == null) return;
         if (volume.profile == null) volume.profile = ScriptableObject.CreateInstance<VolumeProfile>();
-        ajustesCor = volume.profile.Add<ColorAdjustments>(true);
+        if (!volume.profile.TryGet(out ajustesCor)) ajustesCor = volume.profile.Add<ColorAdjustments>(true);
         ajustesCor.colorFilter.overrideState = true;
         ajustesCor.saturation.overrideState = true;
         ajustesCor.postExposure.overrideState = true;
         // Um pouco mais de contraste deixa o vazio mais profundo e o neon mais vivo.
         ajustesCor.contrast.overrideState = true;
         ajustesCor.contrast.value = 12f;
-        vinheta = volume.profile.Add<Vignette>(true);
+        if (!volume.profile.TryGet(out vinheta)) vinheta = volume.profile.Add<Vignette>(true);
         vinheta.intensity.overrideState = true;
         vinheta.color.overrideState = true;
         vinheta.smoothness.overrideState = true;
         vinheta.smoothness.value = 0.45f;
-        aberracao = volume.profile.Add<ChromaticAberration>(true);
+        if (!volume.profile.TryGet(out aberracao)) aberracao = volume.profile.Add<ChromaticAberration>(true);
         aberracao.intensity.overrideState = true;
     }
 
@@ -93,7 +95,7 @@ public sealed class StabilityWorldEffects : MonoBehaviour
     void LateUpdate()
     {
         GameManager jogo = GameManager.Instancia;
-        if (jogo == null || jogo.Estado == EstadoJogo.Pausado) return;
+        if (jogo == null || jogo.Estado == EstadoJogo.Pausado || jogo.Estado == EstadoJogo.Vitoria) return;
         float estabilidade = jogo.Estabilidade;
         float vida = jogador != null ? jogador.Vida : PlayerController.VidaMaxima;
         float perigo = Mathf.Min(estabilidade, vida);
@@ -101,11 +103,12 @@ public sealed class StabilityWorldEffects : MonoBehaviour
         float faseGigante = Mathf.InverseLerp(60f, 30f, perigo);
         float fasePulso = Mathf.InverseLerp(30f, 0f, perigo);
 
-        if (jogo.Estado == EstadoJogo.FimDeJogo && perigo <= 0f)
+        if (jogo.Estado == EstadoJogo.FimDeJogo)
         {
-            if (!colapsoFinal) inicioColapso = Time.unscaledTime;
-            colapsoFinal = true;
-            AplicarColapsoFinal();
+            float colapso = jogo.EscurecimentoFinal;
+            colapsoFinal = colapso >= 0.65f;
+            AtualizarGigante(false, 0f, 0f, 0f);
+            AtualizarNebulosa(colapso);
             return;
         }
 
@@ -113,6 +116,7 @@ public sealed class StabilityWorldEffects : MonoBehaviour
         // Sol continuam com a cor exata; o perigo é mostrado pelo fundo, pelas bordas da tela,
         // pelo tremor e pelo batimento, que tem o mesmo ritmo no Sol e na vinheta.
         float batida = jogador != null ? jogador.BatimentoPerigo : 0f;
+        Shader.SetGlobalFloat("_SolarDeathTrackPulse", fasePulso * batida * 0.16f);
 
         if (ceu != null)
         {
@@ -210,26 +214,6 @@ public sealed class StabilityWorldEffects : MonoBehaviour
                 obstaculos.CriarMeteoro(proximoMeteoroZ);
             proximoMeteoroZ += Random.Range(38f, 52f);
         }
-    }
-
-    void AplicarColapsoFinal()
-    {
-        if (ceu != null && ceu.HasProperty("_Exposure")) ceu.SetFloat("_Exposure", 0.08f);
-        RenderSettings.ambientLight = Color.black;
-        if (ajustesCor != null)
-        {
-            ajustesCor.colorFilter.value = new Color(0.45f, 0.48f, 0.58f);
-            ajustesCor.saturation.value = -85f;
-            ajustesCor.postExposure.value = -2.4f;
-        }
-        if (vinheta != null)
-        {
-            vinheta.intensity.value = 0.68f;
-            vinheta.color.value = Color.black;
-        }
-        if (aberracao != null) aberracao.intensity.value = 0.04f;
-        AtualizarNebulosa(Mathf.Clamp01((Time.unscaledTime - inicioColapso) / 1.15f));
-        AtualizarGigante(false, 0f, 0f, 0f);
     }
 
     void CriarNebulosaFinal()

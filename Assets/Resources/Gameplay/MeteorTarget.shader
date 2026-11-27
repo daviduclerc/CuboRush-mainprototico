@@ -4,6 +4,7 @@ Shader "CuboRush/MeteorTarget"
     {
         _Progresso ("Progresso da queda", Range(0,1)) = 0
         _Brasa ("Brasa após impacto", Range(0,1)) = 0
+        _IdadeBrasa ("Tempo desde o impacto", Range(0,1)) = 0
         _Opacidade ("Opacidade", Range(0,1)) = 1
     }
     SubShader
@@ -17,8 +18,9 @@ Shader "CuboRush/MeteorTarget"
             #pragma vertex vert
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "../Space/RuidoEstelar.hlsl"
             CBUFFER_START(UnityPerMaterial)
-            float _Progresso, _Brasa, _Opacidade;
+            float _Progresso, _Brasa, _IdadeBrasa, _Opacidade;
             CBUFFER_END
             struct Input { float3 pos : POSITION; float2 uv : TEXCOORD0; };
             struct Output { float4 clip : SV_POSITION; float2 uv : TEXCOORD0; };
@@ -34,6 +36,16 @@ Shader "CuboRush/MeteorTarget"
                     (1 - smoothstep(0.26, 0.34, r));
                 float alpha = saturate(anel * (0.65 + 0.35 * pulso) + enche * (0.20 + _Brasa * 0.22) + cruz * 0.75);
                 float3 cor = lerp(float3(2.2, 0.28, 0.013), float3(2.8, 0.61, 0.025), _Brasa);
+                if (_Brasa > 0)
+                {
+                    float choque = saturate(_IdadeBrasa * 3.8);
+                    float frente = lerp(0.12, 0.91, choque);
+                    float propagacao = (1 - smoothstep(0.012, 0.055, abs(r - frente))) * (1 - choque);
+                    float fragmento = EstRuido2(p * 16.0);
+                    float residuo = smoothstep(0.64, 0.88, fragmento) * (1 - smoothstep(0.50, 0.82, r));
+                    alpha = max(alpha * 0.69, saturate(propagacao + residuo * 0.75));
+                    cor += float3(1.7, 0.90, 0.20) * propagacao;
+                }
                 return half4(cor, alpha * _Opacidade);
             }
             ENDHLSL

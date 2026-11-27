@@ -1,8 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Câmera atrás e acima do cubo, acompanhando o avanço dele.
-/// Abre o campo de visão conforme a velocidade aumenta e treme nas batidas.
+/// Mantém o enquadramento fixo no centro da pista enquanto avança na corrida.
 /// </summary>
 public class CameraFollow : MonoBehaviour
 {
@@ -14,10 +13,6 @@ public class CameraFollow : MonoBehaviour
     [Tooltip("Inclinação da câmera para baixo, em graus.")]
     public float inclinacao = 14f;
 
-    [Tooltip("0 = câmera fixa no meio da pista; 1 = acompanha o cubo totalmente de lado.")]
-    [Range(0f, 1f)]
-    public float acompanhamentoLateral = 0.35f;
-
     [Header("Distância de visão")]
     [Tooltip("Até onde a câmera enxerga. Além disso, tudo some no escuro.")]
     public float distanciaVisao = 70f;
@@ -27,7 +22,8 @@ public class CameraFollow : MonoBehaviour
 
     [Header("Campo de visão")]
     public float fovNormal = 60f;
-    public float fovRapido = 74f;
+    [Tooltip("Permite que os impactos desloquem a câmera durante a corrida.")]
+    public bool tremerDuranteCorrida;
 
     static CameraFollow instancia;
     Camera cam;
@@ -54,45 +50,44 @@ public class CameraFollow : MonoBehaviour
     /// <summary>Faz a câmera tremer por alguns instantes.</summary>
     public static void Tremer(float duracao, float forca)
     {
-        if (instancia == null) return;
-        float agora = Time.unscaledTime;
-        if (agora >= instancia.tremorAte)
-        {
-            instancia.tremorInicio = agora;
-            instancia.tremorForca = 0f;
-            instancia.tremorSemente = Random.Range(0f, 1000f);
-        }
-        instancia.tremorAte = Mathf.Max(instancia.tremorAte, agora + duracao);
-        instancia.tremorForca = Mathf.Max(instancia.tremorForca, forca);
+        if (instancia == null || !instancia.tremerDuranteCorrida) return;
+        instancia.AplicarTremor(duracao, forca);
     }
 
-    Vector3 PosicaoDaCorrida() => new Vector3(
-        alvo.position.x * acompanhamentoLateral + deslocamento.x,
-        deslocamento.y,
-        alvo.position.z + deslocamento.z);
-
-    float CampoDeVisaoDaCorrida()
+    internal void AplicarTremor(float duracao, float forca)
     {
-        GameManager jogo = GameManager.Instancia;
-        return Mathf.Lerp(fovNormal, fovRapido, jogo != null ? jogo.Dificuldade : 0f);
+        float agora = Time.unscaledTime;
+        if (agora >= tremorAte)
+        {
+            tremorInicio = agora;
+            tremorForca = 0f;
+            tremorSemente = Random.Range(0f, 1000f);
+        }
+        tremorAte = Mathf.Max(tremorAte, agora + duracao);
+        tremorForca = Mathf.Max(tremorForca, forca);
     }
+
+    internal Vector3 PosicaoDaCorrida(float z) => new Vector3(
+        deslocamento.x,
+        deslocamento.y,
+        z + deslocamento.z);
 
     public void EnquadrarAbertura(float progresso)
     {
         if (alvo == null || cam == null) return;
         float distanciaDaCorrida = 1f - progresso;
-        Vector3 posicao = PosicaoDaCorrida() + new Vector3(3.6f, 6.8f, -6.5f) * distanciaDaCorrida;
+        Vector3 posicao = PosicaoDaCorrida(alvo.position.z) + new Vector3(3.6f, 6.8f, -6.5f) * distanciaDaCorrida;
         Quaternion rotacao = Quaternion.Euler(inclinacao + 13f * distanciaDaCorrida,
             -8f * distanciaDaCorrida, -2.4f * distanciaDaCorrida);
         transform.SetPositionAndRotation(posicao, rotacao);
-        cam.fieldOfView = Mathf.Lerp(49f, CampoDeVisaoDaCorrida(), progresso);
+        cam.fieldOfView = Mathf.Lerp(49f, fovNormal, progresso);
     }
 
     void LateUpdate()
     {
         if (alvo == null) return;
 
-        Vector3 p = PosicaoDaCorrida();
+        Vector3 p = PosicaoDaCorrida(alvo.position.z);
 
         float agora = Time.unscaledTime;
         if (agora < tremorAte && Time.timeScale > 0f)
@@ -101,7 +96,6 @@ public class CameraFollow : MonoBehaviour
             float entrada = Mathf.Clamp01((agora - tremorInicio) / 0.06f);
             float envelope = Mathf.SmoothStep(0f, 1f, restante) * Mathf.SmoothStep(0f, 1f, entrada);
             float ruidoX = (Mathf.PerlinNoise(tremorSemente, agora * 24f) - 0.5f) * 2f;
-            float ruidoY = (Mathf.PerlinNoise(tremorSemente + 37.4f, agora * 24f) - 0.5f) * 2f;
             p += new Vector3(ruidoX, 0f, 0f) * tremorForca * envelope;
         }
         else if (agora >= tremorAte)
@@ -112,12 +106,6 @@ public class CameraFollow : MonoBehaviour
         transform.position = p;
         transform.rotation = Quaternion.Euler(inclinacao, 0f, 0f);
 
-        GameManager jogo = GameManager.Instancia;
-        if (cam != null && jogo != null)
-        {
-            // O estilingue gravitacional abre a visão por um instante (sensação de arrancada).
-            float alvoFov = Mathf.Lerp(fovNormal, fovRapido, jogo.Dificuldade) + 9f * jogo.ImpulsoEstilingue;
-            cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, alvoFov, 2f * Time.deltaTime);
-        }
+        if (cam != null) cam.fieldOfView = fovNormal;
     }
 }

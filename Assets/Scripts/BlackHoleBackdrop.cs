@@ -8,6 +8,10 @@ using UnityEngine.Video;
 /// </summary>
 public class BlackHoleBackdrop : MonoBehaviour
 {
+    internal const string CaminhoArteDoMenu = "Menu/EclipseBackground";
+    const float RaioDaSombraNaArteDoMenu = 0.20f;
+    static readonly Vector2 RecorteDaArteDoMenu = new Vector2(1.64f, 1.10f);
+
     public Transform jogador;
     public float distancia = 48f;
     public float altura = 2.2f;
@@ -16,7 +20,7 @@ public class BlackHoleBackdrop : MonoBehaviour
     public float elevacao = 5f;
 
     [Header("Imagem de fundo (substitui o vídeo)")]
-    [Tooltip("Imagem do buraco negro com o céu. Vazio = procura Resources/Space/FundoBuracoNegro; sem imagem, usa o vídeo.")]
+    [Tooltip("Fundo personalizado. Sem imagem atribuída, usa o disco horizontal da arte do menu.")]
     public Texture2D imagemDeFundo;
     [Tooltip("Onde fica o centro da sombra na imagem (0–1, a partir do canto inferior esquerdo).")]
     public Vector2 centroNaImagem = new Vector2(0.5485f, 0.6266f);
@@ -31,6 +35,7 @@ public class BlackHoleBackdrop : MonoBehaviour
     [Range(0.3f, 3f)] public float limiteDeBrilho = 0.85f;
     Material materialFundo;
     Transform planoFundo;
+    bool fundoUsaArteDoMenu;
 
     Transform conjunto;
     CameraFollow cameraFollow;
@@ -51,8 +56,13 @@ public class BlackHoleBackdrop : MonoBehaviour
         conjunto = new GameObject("BuracoNegro").transform;
         conjunto.SetParent(transform, false);
 
-        if (imagemDeFundo == null) imagemDeFundo = Resources.Load<Texture2D>("Space/FundoBuracoNegro");
-        if (imagemDeFundo != null && MontarImagemDeFundo(cameraPrincipal))
+        if (imagemDeFundo == null)
+        {
+            imagemDeFundo = Resources.Load<Texture2D>(CaminhoArteDoMenu);
+            fundoUsaArteDoMenu = imagemDeFundo != null;
+            if (imagemDeFundo == null) imagemDeFundo = Resources.Load<Texture2D>("Space/FundoBuracoNegro");
+        }
+        if (imagemDeFundo != null && MontarImagemDeFundo())
         {
             AtualizarPosicao();
             return;
@@ -87,7 +97,7 @@ public class BlackHoleBackdrop : MonoBehaviour
     /// Fundo inteiro com uma imagem: o buraco negro dela fica no mesmo lugar e tamanho do antigo
     /// e o resto da imagem (nebulosas e estrelas) cobre o céu atrás da pista.
     /// </summary>
-    bool MontarImagemDeFundo(Camera cameraPrincipal)
+    bool MontarImagemDeFundo()
     {
         Shader shader = Resources.Load<Shader>("Space/FundoEspacial");
         if (shader == null) return false;
@@ -99,6 +109,13 @@ public class BlackHoleBackdrop : MonoBehaviour
         materialFundo.SetFloat("_Exposicao", exposicaoDoFundo);
         materialFundo.SetFloat("_Realce", realceDoDisco);
         materialFundo.SetFloat("_Limite", limiteDeBrilho);
+        if (fundoUsaArteDoMenu)
+        {
+            materialFundo.SetFloat("_ArteDoMenu", 1f);
+            materialFundo.SetVector("_RecorteDisco", new Vector4(RecorteDaArteDoMenu.x, RecorteDaArteDoMenu.y, 0f, 0f));
+            // As estrelas fixas ficam atrás da sombra e o resto da cena mantém a profundidade.
+            materialFundo.renderQueue = (int)RenderQueue.Transparent - 480;
+        }
 
         GameObject plano = GameObject.CreatePrimitive(PrimitiveType.Quad);
         plano.name = "ImagemDeFundo";
@@ -119,6 +136,14 @@ public class BlackHoleBackdrop : MonoBehaviour
         if (planoFundo == null || imagemDeFundo == null) return;
         // Raio da sombra na cena: o do antigo buraco negro em vídeo (22% do quadro), vezes a escala.
         float raioDaSombra = tamanho * 2.25f * 0.22f * escalaDoFundo;
+        if (fundoUsaArteDoMenu)
+        {
+            Vector2 dimensoes = RecorteDaArteDoMenu * (raioDaSombra / RaioDaSombraNaArteDoMenu);
+            planoFundo.localScale = new Vector3(dimensoes.x, dimensoes.y, 1f);
+            planoFundo.localPosition = new Vector3(0f, 0f, 0.8f);
+            return;
+        }
+
         float altura = raioDaSombra / Mathf.Max(0.01f, raioDaSombraNaImagem);
         float largura = altura * imagemDeFundo.width / Mathf.Max(1, imagemDeFundo.height);
         planoFundo.localScale = new Vector3(largura, altura, 1f);
@@ -280,9 +305,7 @@ public class BlackHoleBackdrop : MonoBehaviour
             materialFundo.SetFloat("_Limite", limiteDeBrilho);
             AjustarImagemDeFundo();
         }
-        // Movimento quase imperceptível: a imagem representa um disco distante,
-        // então não deve girar como um objeto sólido.
-        // A câmera e o horizonte ficam fixos; o movimento pertence ao gás do vídeo.
+        // A câmera e o disco ficam alinhados; só o plasma se move.
         if (video != null && videoPronto)
         {
             bool pausado = GameManager.Instancia != null && GameManager.Instancia.Estado == EstadoJogo.Pausado;
@@ -294,14 +317,15 @@ public class BlackHoleBackdrop : MonoBehaviour
     void AtualizarPosicao()
     {
         Vector3 alvo = jogador != null ? jogador.position : Vector3.zero;
-        float x = alvo.x * 0.35f;
+        float x = 0f;
         float y = altura;
         if (cameraFollow != null)
         {
             // Centraliza o buraco negro na câmera e o assenta um pouco acima do ponto de fuga da pista.
-            x = alvo.x * cameraFollow.acompanhamentoLateral + cameraFollow.deslocamento.x;
-            float distanciaDaCamera = Mathf.Max(1f, distancia - cameraFollow.deslocamento.z);
-            y = cameraFollow.deslocamento.y + Mathf.Tan(elevacao * Mathf.Deg2Rad) * distanciaDaCamera;
+            Vector3 camera = cameraFollow.PosicaoDaCorrida(alvo.z);
+            x = camera.x;
+            float distanciaDaCamera = Mathf.Max(1f, alvo.z + distancia - camera.z);
+            y = camera.y + Mathf.Tan(elevacao * Mathf.Deg2Rad) * distanciaDaCamera;
         }
         conjunto.position = new Vector3(x, y, alvo.z + distancia);
     }

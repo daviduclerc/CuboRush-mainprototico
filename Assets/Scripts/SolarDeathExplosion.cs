@@ -38,6 +38,7 @@ public sealed class SolarDeathExplosion : MonoBehaviour
     void CriarParticulas()
     {
         plasma = gameObject.AddComponent<ParticleSystem>();
+        plasma.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var main = plasma.main;
         main.playOnAwake = false;
         main.loop = false;
@@ -49,6 +50,8 @@ public sealed class SolarDeathExplosion : MonoBehaviour
         main.gravityModifier = -0.04f;
         main.startSpeed = 0f;
 
+        var emissao = plasma.emission;
+        emissao.enabled = false;
         var lifetime = plasma.sizeOverLifetime;
         lifetime.enabled = true;
         lifetime.size = new ParticleSystem.MinMaxCurve(1f,
@@ -88,6 +91,7 @@ public sealed class SolarDeathExplosion : MonoBehaviour
         }
 
         // Um anel de plasma largo e rápido deixa a ruptura legível mesmo à distância.
+        plasma.Play();
         const int quantidade = 210;
         for (int i = 0; i < quantidade; i++)
         {
@@ -104,7 +108,6 @@ public sealed class SolarDeathExplosion : MonoBehaviour
             };
             plasma.Emit(particula, 1);
         }
-        plasma.Play();
     }
 
     void CriarOndaDeChoque()
@@ -134,6 +137,8 @@ public sealed class SolarDeathExplosion : MonoBehaviour
     void AtualizarOnda(float progresso)
     {
         if (ondaChoque == null) return;
+        ondaChoque.enabled = progresso < 1f;
+        if (!ondaChoque.enabled) return;
         float raio = Mathf.Lerp(0.25f, 5.8f * escala, Mathf.SmoothStep(0f, 1f, progresso));
         for (int i = 0; i < ondaChoque.positionCount; i++)
         {

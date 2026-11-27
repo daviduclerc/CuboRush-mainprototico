@@ -169,3 +169,29 @@ Packages/packages-lock.json linguist-generated
 
 # Exceptions for .asset files such as lightning pre-baking
 LightingData.asset     binary
+
+# Ship these Unity resources as binary files in GitHub source ZIPs.
+Assets/Resources/Gameplay/ArtifactAir.png       -filter binary
+Assets/Resources/Gameplay/ArtifactCosmos.png    -filter binary
+Assets/Resources/Gameplay/ArtifactEarth.png     -filter binary
+Assets/Resources/Gameplay/ArtifactFire.png      -filter binary
+Assets/Resources/Gameplay/ArtifactWater.png     -filter binary
+Assets/Resources/Gameplay/AtomCoin0.png         -filter binary
+Assets/Resources/Gameplay/AtomCoin1.png         -filter binary
+Assets/Resources/Gameplay/AtomCoin2.png         -filter binary
+Assets/Resources/Gameplay/AtomCoin3.png         -filter binary
+Assets/Resources/Menu/EclipseBackground.png    -filter binary
+Assets/Resources/Menu/MenuBackground.png       -filter binary
+Assets/Resources/Referencia/ReferenciaVisual.png -filter binary
+Assets/Resources/Sol3D/Fotosfera.png            -filter binary
+Assets/Resources/Space/BN_BlackHole_Loop.mp4     -filter binary
+Assets/Resources/Space/BN_Loop_Preview.png       -filter binary
+Assets/Resources/Space/FundoBuracoNegro.jpg      -filter binary
+Assets/Resources/Space/NASA_BlackHole_Loop.mp4   -filter binary
+Assets/Resources/Space/PisoImagem.png           -filter binary
+Assets/Resources/Space/PisoVinilico.png         -filter binary
+Assets/Resources/Space/blackhole_realistic.png   -filter binary
+Assets/Resources/Space/blackhole_realistic_v2.png -filter binary
+Assets/Resources/Space/earth_nasa.jpg           -filter binary
+Assets/Resources/Space/jupiter_nasa.jpg         -filter binary
+Assets/Resources/Space/starmap_nasa.jpg         -filter binary

@@ -13,8 +13,10 @@ public sealed class GameplayHud : MonoBehaviour
     const float AlturaBase = 150f;
 
     GameManager jogo;
-    PlayerController jogador;
     Canvas canvas;
+    CanvasGroup grupo;
+    float aparicao;
+    PlayerController jogador;
     RectTransform raiz, areaSegura, painel, linhaChips;
     Image moldura, brilhoTopo, iconeMoeda;
     Text textoPontos, textoMoedas, textoRecorde;
@@ -66,11 +68,11 @@ public sealed class GameplayHud : MonoBehaviour
         instancia = this;
         jogo = GetComponent<GameManager>();
         jogador = Object.FindAnyObjectByType<PlayerController>();
-
-        raiz = NovoRect("HUD superior direito", transform);
+        raiz = NovoRect("HUD do jogo", transform);
         canvas = raiz.gameObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
+        grupo = raiz.gameObject.AddComponent<CanvasGroup>();
         var escala = raiz.gameObject.AddComponent<CanvasScaler>();
         escala.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         escala.referenceResolution = new Vector2(1280f, 720f);
@@ -159,6 +161,14 @@ public sealed class GameplayHud : MonoBehaviour
         AtualizarAviso();
     }
 
+    /// <summary>Opacidade do HUD durante a introdução do menu (0 = oculto, 1 = visível).</summary>
+    public void Apresentar(float opacidade)
+    {
+        if (aparicao == opacidade) return;
+        aparicao = opacidade;
+        if (grupo != null) Atualizar();
+    }
+
     void AtualizarAviso()
     {
         if (textoAviso == null) return;
@@ -175,7 +185,8 @@ public sealed class GameplayHud : MonoBehaviour
 
     void Atualizar()
     {
-        bool mostrar = jogo != null && jogo.Estado != EstadoJogo.Menu;
+        grupo.alpha = jogo != null && jogo.Estado != EstadoJogo.Menu ? 1f : aparicao;
+        bool mostrar = grupo.alpha > 0f;
         painel.gameObject.SetActive(mostrar);
         if (!mostrar) return;
 
@@ -364,5 +375,21 @@ public sealed class GameplayHud : MonoBehaviour
 
     void OnDisable() { if (raiz != null) raiz.gameObject.SetActive(false); }
     void OnEnable() { if (raiz != null) raiz.gameObject.SetActive(true); }
-    void OnDestroy() { if (raiz != null) Destroy(raiz.gameObject); }
+    void OnDestroy()
+    {
+        if (raiz != null) Destroy(raiz.gameObject);
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

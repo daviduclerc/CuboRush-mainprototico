@@ -7,6 +7,7 @@ Shader "Sol3D/Fotosfera"
         _LimbDarkening ("Escurecimento na borda", Range(0, 1)) = 0.64
         _Tint ("Cor do núcleo", Color) = (1, 1, 1, 1)
         _TintInfluence ("Influência da cor", Range(0, 1)) = 0
+        _PlasmaDourado ("Plasma dourado", Range(0, 1)) = 0
     }
     SubShader
     {
@@ -20,6 +21,7 @@ Shader "Sol3D/Fotosfera"
             #pragma vertex vert
             #pragma fragment frag
             #include "UnityCG.cginc"
+            #include "PlasmaSolar.cginc"
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
@@ -27,6 +29,7 @@ Shader "Sol3D/Fotosfera"
             float _LimbDarkening;
             half4 _Tint;
             float _TintInfluence;
+            float _PlasmaDourado;
 
             struct Varyings
             {
@@ -56,7 +59,10 @@ Shader "Sol3D/Fotosfera"
                 half luminance = dot(solar, half3(0.299, 0.587, 0.114));
                 half3 solarColor = _Tint.rgb * (0.30 + luminance * 1.60);
                 solar = lerp(solar, solarColor, saturate(_TintInfluence));
-                return half4(solar * brightness, 1);
+                solar *= brightness;
+                if (_PlasmaDourado > 0.0)
+                    solar = lerp(solar, PlasmaSolar(luminance, input.uv, facing, _Time.y), _PlasmaDourado);
+                return half4(solar, 1);
             }
             ENDCG
         }

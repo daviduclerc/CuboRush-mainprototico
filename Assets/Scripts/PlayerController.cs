@@ -212,6 +212,20 @@ public class PlayerController : MonoBehaviour
         // Bolinha que orbita o modelo visível enquanto houver escudo.
         orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", transform,
             Vector3.zero, Vector3.one * 0.2f, new Color(0.75f, 0.95f, 1f), true).transform;
+        rastroEscudo = orbeEscudo.gameObject.AddComponent<TrailRenderer>();
+        rastroEscudo.time = 0.42f;
+        rastroEscudo.minVertexDistance = 0.025f;
+        rastroEscudo.startWidth = 0.09f;
+        rastroEscudo.endWidth = 0.012f;
+        rastroEscudo.material = Visual.Mat(new Color(0.35f, 0.82f, 1f), true);
+        var gradienteRastroEscudo = new Gradient();
+        gradienteRastroEscudo.SetKeys(
+            new[] { new GradientColorKey(new Color(0.45f, 0.9f, 1f), 0f), new GradientColorKey(new Color(0.2f, 0.65f, 1f), 1f) },
+            new[] { new GradientAlphaKey(0.9f, 0f), new GradientAlphaKey(0f, 1f) });
+        rastroEscudo.colorGradient = gradienteRastroEscudo;
+        rastroEscudo.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        rastroEscudo.receiveShadows = false;
+        rastroEscudo.emitting = false;
         orbeEscudo.gameObject.SetActive(false);
         if (visualSolar && GetComponent<SolarMotionFlames>() == null)
             gameObject.AddComponent<SolarMotionFlames>();
@@ -627,15 +641,23 @@ public class PlayerController : MonoBehaviour
             Vector3 escala = deformacaoSolar != null ? deformacaoSolar.lossyScale : Vector3.one;
             float raioX = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.x));
             float raioY = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.y));
-            // Órbita frontal e rente à fotosfera: antes ela ficava quase no plano do
-            // chão e parecia um anel separado do Sol visto pela câmera da pista.
-            float angulo = Time.time * 3.2f;
+            // Mantém a órbita vertical em torno do Sol e deixa espaço visível até a fotosfera.
+            float angulo = Time.time * 3.8f;
+            float raioOrbitaX = Mathf.Max(0.95f, raioX + 0.38f);
+            float raioOrbitaY = Mathf.Max(0.95f, raioY + 0.38f);
             orbeEscudo.position = centro + new Vector3(
-                Mathf.Cos(angulo) * raioX * 0.42f,
-                Mathf.Sin(angulo) * raioY * 0.42f,
-                -raioSolarBase * 0.78f);
+                Mathf.Cos(angulo) * raioOrbitaX,
+                Mathf.Sin(angulo) * raioOrbitaY,
+                -raioSolarBase * 0.55f);
         }
-        if (orbeEscudo.gameObject.activeSelf != ativo) orbeEscudo.gameObject.SetActive(ativo);
+        if (!ativo && rastroEscudo != null)
+        {
+            rastroEscudo.emitting = false;
+            rastroEscudo.Clear();
+        }
+        if (orbeEscudo.gameObject.activeSelf != ativo)
+            orbeEscudo.gameObject.SetActive(ativo);
+        if (ativo && rastroEscudo != null) rastroEscudo.emitting = true;
     }
 
     /// <summary>Posição X do centro de uma faixa (a pista é centrada em X = 0).</summary>

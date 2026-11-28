@@ -631,9 +631,9 @@ public class PlayerController : MonoBehaviour
             // chão e parecia um anel separado do Sol visto pela câmera da pista.
             float angulo = Time.time * 3.2f;
             orbeEscudo.position = centro + new Vector3(
-                Mathf.Cos(angulo) * (raioX + 0.05f),
-                Mathf.Sin(angulo) * (raioY + 0.05f),
-                -raioSolarBase * 0.32f);
+                Mathf.Cos(angulo) * raioX * 0.42f,
+                Mathf.Sin(angulo) * raioY * 0.42f,
+                -raioSolarBase * 0.78f);
         }
         if (orbeEscudo.gameObject.activeSelf != ativo) orbeEscudo.gameObject.SetActive(ativo);
     }

@@ -260,7 +260,7 @@ public sealed class SunDeathSequence : MonoBehaviour
         particulasDeEnergia.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         luzSolar.enabled = false;
         Shader.SetGlobalFloat(PulsoPista, 1f);
-        SolarDeathExplosion.Criar(centro, tamanhoSupernova);
+        SolarDeathExplosion.Criar(centro, corDoSol, tamanhoSupernova);
         GameManager.Instancia?.SomDeImpacto();
         if (cameraDaPista != null) cameraDaPista.AplicarTremor(0.58f, forcaDoImpacto);
     }

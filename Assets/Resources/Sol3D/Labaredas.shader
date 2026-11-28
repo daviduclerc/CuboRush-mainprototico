@@ -3,6 +3,7 @@ Shader "Sol3D/Labaredas"
     Properties
     {
         [HDR] _Tint ("Cor do plasma", Color) = (3.5, 0.3, 0.1, 1)
+        _PulseOpacity ("Opacidade do pulso", Range(0, 1)) = 1
         _LateralSide ("Lado permitido (zero desativa)", Float) = 0
         _SourceCenter ("Centro do Sol", Vector) = (0,0,0,0)
         _CutDistance ("Limite lateral", Float) = 0
@@ -25,6 +26,7 @@ Shader "Sol3D/Labaredas"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             CBUFFER_START(UnityPerMaterial)
             half4 _Tint;
+            float _PulseOpacity;
             float4 _SourceCenter;
             float _LateralSide;
             float _CutDistance;
@@ -81,7 +83,7 @@ Shader "Sol3D/Labaredas"
                 float filetes = smoothstep(0.72, 0.98, fluxo) * plume;
                 float eixoNucleo = eixo / (largura * 0.34);
                 float nucleo = exp(-eixoNucleo * eixoNucleo * 2.0) * ponta * origem;
-                float alpha = saturate(plume * 0.82 + filetes * 0.18) * input.color.a;
+                float alpha = saturate(plume * 0.82 + filetes * 0.18) * input.color.a * _PulseOpacity;
 
                 // A cor principal vem diretamente do Sol (vermelho, verde, azul, etc.).
                 // Só o centro ganha um pequeno brilho branco, sem puxar para o laranja.

@@ -137,14 +137,20 @@ public sealed class SolarMotionFlames : MonoBehaviour
         float proporcao = Mathf.Max(0.1f, Mathf.Pow(volume / volumeInicial, 1f / 3f));
         origem.localScale = Vector3.one * proporcao;
         origemRastroPulo.position = new Vector3(0f, 0f, transform.position.z);
-        material.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
-        materialTraseiro.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+        // Repete o batimento da fotosfera nas chamas: elas diminuem entre os
+        // pulsos e brilham junto com o Sol quando a vida/estabilidade está baixa.
+        float batimento = jogador.Perigo <= 30f && jogador.Perigo > 0f
+            ? jogador.BatimentoPerigo : 0f;
+        float brilhoBatimento = batimento > 0f ? Mathf.Lerp(0.38f, 1.35f, batimento) : 1f;
+        Color corLabareda = jogador.CorVisualAtual * (3.5f * brilhoBatimento);
+        material.SetColor("_Tint", corLabareda);
+        materialTraseiro.SetColor("_Tint", corLabareda);
         materialTraseiro.SetVector("_SourceCenter", sol.position);
         Vector3 raios = new Vector3(Mathf.Abs(escalaCorpo.x), Mathf.Abs(escalaCorpo.y), Mathf.Abs(escalaCorpo.z)) * raioCorpo;
         materialTraseiro.SetVector("_SolarMaskRadii", raios * 0.98f);
         materialLateral.SetVector("_SolarMaskRadii", raios * 0.98f);
         materialTraseiro.SetFloat("_RearClipDistance", raios.z * 0.85f);
-        materialLateral.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+        materialLateral.SetColor("_Tint", corLabareda);
         materialLateral.SetVector("_SourceCenter", sol.position);
         materialLateral.SetFloat("_CutDistance", raioCorpo * proporcao * 0.80f);
         if (estado != EstadoJogo.Jogando)

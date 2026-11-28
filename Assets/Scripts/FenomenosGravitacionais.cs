@@ -182,9 +182,11 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
         if (!ativo) return;
         if (jogo.Estado == EstadoJogo.Jogando) giroAnel += 220f * Time.deltaTime;
         Transform t = anelIma.transform;
-        t.position = jogador.Limites.center;
+        // O indicador do ímã acompanha o centro visível do Sol, sem ficar
+        // parecendo um escudo largo apoiado no chão.
+        t.position = jogador.VisualSolar != null ? jogador.VisualSolar.position : jogador.Limites.center;
         t.rotation = Quaternion.Euler(14f, 0f, 9f) * Quaternion.Euler(0f, giroAnel, 0f);
-        float raio = 1.05f + 0.08f * Mathf.Sin(Time.time * 5f);
+        float raio = 0.34f + 0.015f * Mathf.Sin(Time.time * 5f);
         t.localScale = Vector3.one * raio;
     }
 

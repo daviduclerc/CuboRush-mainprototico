@@ -211,7 +211,7 @@ public class PlayerController : MonoBehaviour
 
         // Bolinha que orbita o modelo visível enquanto houver escudo.
         orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", transform,
-            Vector3.zero, Vector3.one * 0.3f, new Color(0.75f, 0.95f, 1f), true).transform;
+            Vector3.zero, Vector3.one * 0.2f, new Color(0.75f, 0.95f, 1f), true).transform;
         orbeEscudo.gameObject.SetActive(false);
         if (visualSolar && GetComponent<SolarMotionFlames>() == null)
             gameObject.AddComponent<SolarMotionFlames>();
@@ -624,11 +624,16 @@ public class PlayerController : MonoBehaviour
         if (ativo)
         {
             Vector3 centro = visualSolarRaiz != null ? visualSolarRaiz.position : Limites.center;
-            float raioVisivel = deformacaoSolar != null ? raioSolarBase * deformacaoSolar.localScale.x : 0.50f;
-            float angulo = Time.time * 6f;
-            float raioOrbita = raioVisivel + 0.10f;
-            orbeEscudo.position = centro + new Vector3(Mathf.Cos(angulo) * raioOrbita,
-                Mathf.Sin(angulo) * raioVisivel * 0.18f, Mathf.Sin(angulo) * raioOrbita);
+            Vector3 escala = deformacaoSolar != null ? deformacaoSolar.lossyScale : Vector3.one;
+            float raioX = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.x));
+            float raioY = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.y));
+            // Órbita frontal e rente à fotosfera: antes ela ficava quase no plano do
+            // chão e parecia um anel separado do Sol visto pela câmera da pista.
+            float angulo = Time.time * 3.2f;
+            orbeEscudo.position = centro + new Vector3(
+                Mathf.Cos(angulo) * (raioX + 0.05f),
+                Mathf.Sin(angulo) * (raioY + 0.05f),
+                -raioSolarBase * 0.32f);
         }
         if (orbeEscudo.gameObject.activeSelf != ativo) orbeEscudo.gameObject.SetActive(ativo);
     }

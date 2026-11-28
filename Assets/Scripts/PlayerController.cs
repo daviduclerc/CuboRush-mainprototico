@@ -213,10 +213,11 @@ public class PlayerController : MonoBehaviour
         orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", transform,
             Vector3.zero, Vector3.one * 0.2f, new Color(0.75f, 0.95f, 1f), true).transform;
         rastroEscudo = orbeEscudo.gameObject.AddComponent<TrailRenderer>();
-        rastroEscudo.time = 0.42f;
+        // Um rastro curto mantém visível a rotação sem deixar uma cauda presa à pista.
+        rastroEscudo.time = 0.05f;
         rastroEscudo.minVertexDistance = 0.025f;
-        rastroEscudo.startWidth = 0.09f;
-        rastroEscudo.endWidth = 0.012f;
+        rastroEscudo.startWidth = 0.065f;
+        rastroEscudo.endWidth = 0.008f;
         rastroEscudo.material = Visual.Mat(new Color(0.35f, 0.82f, 1f), true);
         var gradienteRastroEscudo = new Gradient();
         gradienteRastroEscudo.SetKeys(

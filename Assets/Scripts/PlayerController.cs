@@ -163,6 +163,7 @@ public class PlayerController : MonoBehaviour
     MaterialPropertyBlock blocoDePropriedades;
     [HideInInspector] public bool visualSolar;
     Transform orbeEscudo;
+    TrailRenderer rastroEscudo;
     Vector2 inicioToque;
     bool toqueValido, toqueUsado;
     bool morto;

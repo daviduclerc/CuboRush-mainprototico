@@ -45,7 +45,6 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
     int marcoAtracao;
     LineRenderer anelIma;
     Transform marcadorIma;
-    float giroAnel;
 
     void Start()
     {
@@ -169,7 +168,7 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
         anelIma.widthMultiplier = 0.065f;
         anelIma.sharedMaterial = Visual.Mat(CorIma, true);
         marcadorIma = Visual.Forma(PrimitiveType.Sphere, "MarcadorRotacaoIma", objeto.transform,
-            Vector3.right, Vector3.one * 0.14f, CorIma, true).transform;
+            Vector3.right, Vector3.one * 0.18f, CorIma, true).transform;
         anelIma.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         anelIma.receiveShadows = false;
         anelIma.enabled = false;
@@ -183,13 +182,13 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
         if (ativo && jogo.TempoIma < 1.5f) ativo = Mathf.FloorToInt(Time.time * 8f) % 2 == 0;
         anelIma.enabled = ativo;
         if (!ativo) return;
-        if (jogo.Estado == EstadoJogo.Jogando) giroAnel += 220f * Time.deltaTime;
         Transform t = anelIma.transform;
         // O indicador do ímã acompanha o centro visível do Sol, sem ficar
         // parecendo um escudo largo apoiado no chão.
         t.position = jogador.VisualSolar != null ? jogador.VisualSolar.position : jogador.Limites.center;
-        // Anel vertical centrado no Sol; o plano gira em torno do eixo Y.
-        t.rotation = Quaternion.Euler(0f, giroAnel, 0f) * Quaternion.Euler(0f, 0f, 9f);
+        // Mantém o anel no plano vertical voltado para a câmera; o marcador
+        // percorre a circunferência para mostrar a rotação sem virar o anel de lado.
+        t.rotation = Quaternion.identity;
         float raio = 0.95f + 0.06f * Mathf.Sin(Time.time * 5f);
         t.localScale = Vector3.one * raio;
         if (marcadorIma != null)

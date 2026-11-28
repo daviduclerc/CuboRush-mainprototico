@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Cria obstáculos, moedas e power-ups na frente do jogador, apaga o que ficou
+/// Cria obstáculos e moedas na frente do jogador, apaga o que ficou
 /// para trás e verifica as colisões com o cubo.
 ///
 /// Tipos de obstáculo:
@@ -26,11 +26,8 @@ public class ObstacleSpawner : MonoBehaviour
     public float tempoReacaoInicial = 1.5f;
     public float tempoReacaoFinal = 0.95f;
 
-    [Header("Moedas e power-ups")]
+    [Header("Moedas")]
     [Range(0f, 1f)] public float chanceMoedas = 0.65f;
-    public float distanciaMinPowerUp = 180f;
-    public float distanciaMaxPowerUp = 320f;
-    public float raioIma = 8f;
 
     [Header("Fenômenos gravitacionais")]
     [Tooltip("Segundos de jogo até poder aparecer um mini buraco negro.")]
@@ -60,17 +57,12 @@ public class ObstacleSpawner : MonoBehaviour
     [System.Flags]
     enum Obst { Nenhum = 0, Baixo = 1, Barra = 2 }
 
-    static readonly Color corEscudo = new Color(0.3f, 0.8f, 1f);
-    static readonly Color corIma = new Color(0.3f, 1f, 0.45f);
-    static readonly Color corDobro = new Color(1f, 0.5f, 0.9f);
-
     readonly List<TrackItem> itens = new List<TrackItem>();
     float proximoZ;
     float proximoEstilingueZ;
     float proximoBuracoZ;
     bool curvaturaRemovida;
     EstadoJogo estadoAnterior = EstadoJogo.Menu;
-    float proximoPowerUpZ;
     Bounds caixaAnterior;
     int passoPadrao;
     int faixaRota;
@@ -90,7 +82,6 @@ public class ObstacleSpawner : MonoBehaviour
         caixaAnterior = jogador.Limites;
         proximoInimigo = primeiroInimigo;
         proximoZ = z + inicioLivre;
-        proximoPowerUpZ = z + Random.Range(120f, 200f);
         proximoEstilingueZ = z + Random.Range(220f, 320f);
         proximoBuracoZ = z;
     }
@@ -243,24 +234,6 @@ public class ObstacleSpawner : MonoBehaviour
                 }
             }
 
-            // Ímã gravitacional: as moedas da cor do Sol entram em órbita e espiralam até ele,
-            // como matéria num disco de acreção (mais rápidas quanto mais perto).
-            if (item.tipo == TipoItem.Moeda && item.corId == jogador.CorId && jogo.TempoIma > 0f)
-            {
-                Vector3 centro = caixaJogador.center;
-                Vector3 relativo = t.position - centro;
-                float raio = relativo.magnitude;
-                if (raio < raioIma)
-                {
-                    float dt = Time.deltaTime;
-                    float giro = 140f * Mathf.Clamp01(raio / 2f) * dt;
-                    relativo = Quaternion.AngleAxis(giro, Vector3.up) * relativo;
-                    // A atração precisa vencer a velocidade da corrida, inclusive atrás do Sol.
-                    float velocidadeIma = Mathf.Max(12f, jogo.Velocidade + 8f);
-                    t.position = centro + Vector3.MoveTowards(relativo, Vector3.zero, velocidadeIma * dt);
-                }
-            }
-
             if (item.obstaculoSolar != null)
             {
                 if (item.atravessado) continue;
@@ -291,10 +264,6 @@ public class ObstacleSpawner : MonoBehaviour
                     if (jogo.Estado == EstadoJogo.FimDeJogo) return;
                     break;
                 }
-                case TipoItem.Escudo: jogo.AtivarEscudo(); Remover(i); break;
-                case TipoItem.Ima: jogo.AtivarIma(); Remover(i); break;
-                case TipoItem.Dobro: jogo.AtivarDobro(); Remover(i); break;
-
                 case TipoItem.Obstaculo:
                 {
                     if (item.atravessado) break;
@@ -310,14 +279,7 @@ public class ObstacleSpawner : MonoBehaviour
                     if (portal != null) portal.Atravessar(false);
                     if (item.obstaculoSolar != null) item.obstaculoSolar.Sinalizar(false);
                     if (jogador.Invencivel) break;
-                    if (jogo.ConsumirEscudo())
-                    {
-                        // O portal continua visível para terminar sua animação.
-                        if (portal == null) Remover(i);
-                        jogador.FicarInvencivel(1.2f);
-                        CameraFollow.Tremer(0.2f, 0.25f);
-                    }
-                    else if (jogador.ReceberDano(25f))
+                    if (jogador.ReceberDano(25f))
                     {
                         CameraFollow.Tremer(0.24f, 0.32f);
                         if (jogo.Estado == EstadoJogo.FimDeJogo) return;
@@ -396,12 +358,7 @@ public class ObstacleSpawner : MonoBehaviour
         }
 
         float zMeio = z + espaco / 2f;
-        if (zMeio >= proximoPowerUpZ)
-        {
-            CriarPowerUp(Random.Range(0, Faixas), zMeio);
-            proximoPowerUpZ = zMeio + Random.Range(distanciaMinPowerUp, distanciaMaxPowerUp);
-        }
-        else if (espaco > 14f && Random.value < 0.3f)
+        if (espaco > 14f && Random.value < 0.3f)
         {
             CriarMoedas(Random.Range(0, Faixas), zMeio, Obst.Nenhum, vel);
         }
@@ -619,28 +576,6 @@ public class ObstacleSpawner : MonoBehaviour
         }
     }
 
-    void CriarPowerUp(int faixa, float z)
-    {
-        TipoItem tipo;
-        Color cor;
-        switch (Random.Range(0, 3))
-        {
-            case 0: tipo = TipoItem.Escudo; cor = corEscudo; break;
-            case 1: tipo = TipoItem.Ima; cor = corIma; break;
-            default: tipo = TipoItem.Dobro; cor = corDobro; break;
-        }
-
-        GameObject obj = Visual.Forma(PrimitiveType.Sphere, "PowerUp" + tipo, transform,
-            new Vector3(jogador.PosicaoXDaFaixa(faixa), 0.9f, z), Vector3.one * 0.9f, cor, true);
-
-        // Anel em volta, para diferenciar bem das moedas.
-        Visual.Forma(PrimitiveType.Cube, "Anel", obj.transform,
-            Vector3.zero, new Vector3(1.5f, 0.12f, 1.5f), cor, true);
-
-        TrackItem item = Registrar(obj, tipo, Vector3.one * 1.2f);
-        item.girar = true;
-    }
-
     public void EntrarNaChuvaDeMeteoros(int faixaSegura)
     {
         emChuvaDeMeteoros = true;
@@ -788,7 +723,6 @@ public class ObstacleSpawner : MonoBehaviour
     /// <summary>
     /// Limite de visão gravitacional: longe, o objeto é engolido (não aparece); chegando perto,
     /// sai esticado, fino e puxado em direção ao buraco negro, e se solta aos poucos.
-    /// Esticar no eixo y local funciona até nas moedas e power-ups, que giram em torno dele.
     /// </summary>
     static void AplicarAtracao(TrackItem item, Transform t, Vector3 posJogador)
     {

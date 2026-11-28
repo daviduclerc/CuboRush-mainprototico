@@ -7,7 +7,6 @@ using UnityEngine;
 ///  - Ondas gravitacionais: uma crista vem do buraco negro pela pista. Quem estiver no ar
 ///    (pulando) ou com o poço aberto (agachado) passa ileso e ganha pontos; quem estiver
 ///    parado no chão leva dano.
-///  - Ímã gravitacional: um anel de acreção em volta do Sol enquanto o ímã estiver ativo.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public sealed class FenomenosGravitacionais : MonoBehaviour
@@ -36,22 +35,17 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
 
     static readonly Color CorOnda = new Color(0.45f, 0.9f, 1f);
     static readonly Color CorAtracao = new Color(1f, 0.6f, 0.25f);
-    static readonly Color CorIma = new Color(0.3f, 1f, 0.45f);
-
     float proximaOnda;
     bool ondaViva, ondaResolvida;
     float frenteOnda, amplitudeAtual;
     int ondasAvisadas;
     int marcoAtracao;
-    LineRenderer anelIma;
-    Transform marcadorIma;
 
     void Start()
     {
         Atracao = 0f;
         CampoGravitacional.Reiniciar();
         proximaOnda = primeiraOnda;
-        CriarAnelIma();
     }
 
     void Update()
@@ -93,7 +87,6 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
         }
         CampoGravitacional.DefinirOnda(frenteOnda, ondaViva ? amplitudeAtual : 0f);
 
-        AtualizarAnelIma(jogo);
     }
 
     void AvisarMarcos()
@@ -135,66 +128,10 @@ public sealed class FenomenosGravitacionais : MonoBehaviour
             return;
         }
         if (jogador.Invencivel) return;
-        if (jogo.ConsumirEscudo())
-        {
-            jogador.FicarInvencivel(1f);
-            CameraFollow.Tremer(0.2f, 0.25f);
-            GameplayHud.Avisar("O ESCUDO SEGUROU A ONDA", null, EstiloUI.Ciano);
-            return;
-        }
         if (jogador.ReceberDano(danoOnda))
         {
             CameraFollow.Tremer(0.32f, 0.45f);
             GameplayHud.Avisar("ATINGIDO PELA ONDA", null, EstiloUI.Perigo);
-        }
-    }
-
-    // ---------- Anel do ímã gravitacional ----------
-
-    void CriarAnelIma()
-    {
-        var objeto = new GameObject("AnelDoImaGravitacional");
-        objeto.transform.SetParent(transform, false);
-        anelIma = objeto.AddComponent<LineRenderer>();
-        anelIma.useWorldSpace = false;
-        anelIma.loop = true;
-        const int pontos = 48;
-        anelIma.positionCount = pontos;
-        for (int i = 0; i < pontos; i++)
-        {
-            float a = i * Mathf.PI * 2f / pontos;
-            anelIma.SetPosition(i, new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f));
-        }
-        anelIma.widthMultiplier = 0.065f;
-        anelIma.sharedMaterial = Visual.Mat(CorIma, true);
-        marcadorIma = Visual.Forma(PrimitiveType.Sphere, "MarcadorRotacaoIma", objeto.transform,
-            Vector3.right, Vector3.one * 0.18f, CorIma, true).transform;
-        anelIma.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        anelIma.receiveShadows = false;
-        anelIma.enabled = false;
-    }
-
-    void AtualizarAnelIma(GameManager jogo)
-    {
-        if (anelIma == null) return;
-        bool ativo = jogo.TempoIma > 0f && jogo.Estado != EstadoJogo.FimDeJogo;
-        // Pisca no último segundo e meio para avisar que vai acabar.
-        if (ativo && jogo.TempoIma < 1.5f) ativo = Mathf.FloorToInt(Time.time * 8f) % 2 == 0;
-        anelIma.enabled = ativo;
-        if (!ativo) return;
-        Transform t = anelIma.transform;
-        // O indicador do ímã acompanha o centro visível do Sol, sem ficar
-        // parecendo um escudo largo apoiado no chão.
-        t.position = jogador.VisualSolar != null ? jogador.VisualSolar.position : jogador.Limites.center;
-        // Mantém o anel no plano vertical voltado para a câmera; o marcador
-        // percorre a circunferência para mostrar a rotação sem virar o anel de lado.
-        t.rotation = Quaternion.identity;
-        float raio = 0.95f + 0.06f * Mathf.Sin(Time.time * 5f);
-        t.localScale = Vector3.one * raio;
-        if (marcadorIma != null)
-        {
-            float anguloMarcador = Time.time * 5.5f;
-            marcadorIma.localPosition = new Vector3(Mathf.Cos(anguloMarcador), Mathf.Sin(anguloMarcador), 0f);
         }
     }
 

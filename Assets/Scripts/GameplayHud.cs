@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Vida e estabilidade orbitais à esquerda. Pontos, moedas, recorde, metas
-/// e power-ups ficam à direita, dentro da área segura da tela.
+/// ficam à direita, dentro da área segura da tela.
 /// </summary>
 public sealed class GameplayHud : MonoBehaviour
 {
@@ -26,12 +26,11 @@ public sealed class GameplayHud : MonoBehaviour
     CanvasGroup grupo;
     float aparicao;
     PlayerController jogador;
-    RectTransform raiz, areaSegura, painel, painelVitais, linhaChips;
+    RectTransform raiz, areaSegura, painel, painelVitais;
     Image moldura, brilhoTopo, iconeMoeda;
     Text textoPontos, textoMoedas, textoRecorde, textoMetas, rotuloVida, percentualVida, percentualEstabilidade;
     Text rotuloEstabilidade, avisoEstabilidade;
     Material materialVitais;
-    readonly Chip[] chips = new Chip[3];
 
     int moedasAnteriores;
     float pulsoMoeda;
@@ -58,13 +57,6 @@ public sealed class GameplayHud : MonoBehaviour
         instancia.corAviso = cor;
         instancia.inicioAviso = Time.unscaledTime;
         instancia.duracaoAviso = duracao;
-    }
-
-    sealed class Chip
-    {
-        public RectTransform rect;
-        public Image fundo, contorno;
-        public Text texto;
     }
 
     void Start()
@@ -135,10 +127,6 @@ public sealed class GameplayHud : MonoBehaviour
 
         textoMetas = NovoTexto("", painel, 12, EstiloUI.TextoSuave, TextAnchor.MiddleLeft);
         Posicionar(textoMetas.rectTransform, 82f, 34f);
-        linhaChips = NovoRect("Power-ups ativos", painel);
-        Posicionar(linhaChips, 122f, 22f);
-        for (int i = 0; i < chips.Length; i++) chips[i] = NovoChip(linhaChips);
-
         if (jogo != null) moedasAnteriores = jogo.Moedas;
 
         rectAviso = NovoRect("Aviso", areaSegura);
@@ -205,8 +193,7 @@ public sealed class GameplayHud : MonoBehaviour
 
         AjustarAreaSegura(out float larguraDisponivel, out float alturaDisponivel);
 
-        int quantidadeBuffs = (jogo.TemEscudo ? 1 : 0) + (jogo.TempoIma > 0f ? 1 : 0) + (jogo.TempoDobro > 0f ? 1 : 0);
-        float alturaPainel = AlturaBase + (quantidadeBuffs > 0 ? 32f : 0f);
+        float alturaPainel = AlturaBase;
         float alturaVitais = AlturaVitais + (nivelAlerta > 0 ? AlturaDoAlerta : 0f);
         float alturaDosPaineis = Mathf.Max(alturaPainel, alturaVitais * EscalaVitais);
         float reducao = Mathf.Min(1f, larguraDisponivel / (Largura + LarguraVitais * EscalaVitais + 64f),
@@ -248,14 +235,6 @@ public sealed class GameplayHud : MonoBehaviour
 
         AtualizarVitais(estabilidade);
 
-        // Etiquetas dos power-ups, lado a lado.
-        float x = 0f;
-        int indice = 0;
-        if (jogo.TemEscudo) x = MostrarChip(indice++, "ESCUDO", EstiloUI.Ciano, x);
-        if (jogo.TempoIma > 0f) x = MostrarChip(indice++, "ÍMÃ GRAV.  " + Mathf.CeilToInt(jogo.TempoIma) + "s", EstiloUI.Verde, x);
-        if (jogo.TempoDobro > 0f) x = MostrarChip(indice++, "2X  " + Mathf.CeilToInt(jogo.TempoDobro) + "s", EstiloUI.Rosa, x);
-        for (; indice < chips.Length; indice++) chips[indice].rect.gameObject.SetActive(false);
-        linhaChips.gameObject.SetActive(quantidadeBuffs > 0);
     }
 
     void AjustarAreaSegura(out float larguraDisponivel, out float alturaDisponivel)
@@ -334,20 +313,6 @@ public sealed class GameplayHud : MonoBehaviour
         return Color.Lerp(ciano, azul, (nivel - 80f) / 20f);
     }
 
-    float MostrarChip(int indice, string texto, Color cor, float x)
-    {
-        Chip chip = chips[indice];
-        chip.rect.gameObject.SetActive(true);
-        chip.texto.text = texto;
-        chip.texto.color = cor;
-        chip.fundo.color = new Color(cor.r, cor.g, cor.b, 0.16f);
-        chip.contorno.color = new Color(cor.r, cor.g, cor.b, 0.85f);
-        float largura = chip.texto.preferredWidth + 22f;
-        chip.rect.anchoredPosition = new Vector2(x, 0f);
-        chip.rect.sizeDelta = new Vector2(largura, 22f);
-        return x + largura + 6f;
-    }
-
     // ---------- Construção ----------
 
     void CriarVitais()
@@ -402,21 +367,6 @@ public sealed class GameplayHud : MonoBehaviour
         contorno.effectDistance = new Vector2(1.5f, -1.5f);
         texto.gameObject.AddComponent<HudPerspectiveText>().Configurar(orbita, PerspectivaVitais);
         return texto;
-    }
-
-    Chip NovoChip(Transform pai)
-    {
-        var chip = new Chip();
-        chip.rect = NovoRect("Power-up", pai);
-        chip.rect.anchorMin = chip.rect.anchorMax = chip.rect.pivot = new Vector2(0f, 1f);
-        chip.fundo = Imagem(chip.rect, EstiloUI.SpriteArredondado, Color.clear, 1.8f);
-        var rectContorno = NovoRect("Contorno", chip.rect);
-        Esticar(rectContorno);
-        chip.contorno = Imagem(rectContorno, EstiloUI.SpriteContorno, Color.white, 1.8f);
-        chip.texto = NovoTexto("", chip.rect, 12, Color.white, TextAnchor.MiddleCenter);
-        Esticar(chip.texto.rectTransform);
-        chip.rect.gameObject.SetActive(false);
-        return chip;
     }
 
     static RectTransform NovoRect(string nome, Transform pai)

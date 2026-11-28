@@ -68,7 +68,7 @@ public static class GameBootstrap
         chao.quantidadeFaixas = QuantidadeFaixas;
         chao.larguraFaixa = LarguraFaixa;
 
-        // Obstáculos, moedas e power-ups.
+        // Obstáculos e moedas.
         ObstacleSpawner obstaculos = new GameObject("GeradorDeObstaculos").AddComponent<ObstacleSpawner>();
         obstaculos.jogador = jogador;
         var desafio = Object.FindAnyObjectByType<MeteorChallenge>();

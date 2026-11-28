@@ -162,8 +162,6 @@ public class PlayerController : MonoBehaviour
     Renderer[] visuais;
     MaterialPropertyBlock blocoDePropriedades;
     [HideInInspector] public bool visualSolar;
-    Transform orbeEscudo;
-    TrailRenderer rastroEscudo;
     Vector2 inicioToque;
     bool toqueValido, toqueUsado;
     bool morto;
@@ -210,25 +208,6 @@ public class PlayerController : MonoBehaviour
         transform.position = p;
         posicaoAnterior = p;
 
-        // Bolinha que orbita o modelo visível enquanto houver escudo.
-        orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", transform,
-            Vector3.zero, Vector3.one * 0.2f, new Color(0.75f, 0.95f, 1f), true).transform;
-        rastroEscudo = orbeEscudo.gameObject.AddComponent<TrailRenderer>();
-        // Um rastro curto mantém visível a rotação sem deixar uma cauda presa à pista.
-        rastroEscudo.time = 0.05f;
-        rastroEscudo.minVertexDistance = 0.025f;
-        rastroEscudo.startWidth = 0.065f;
-        rastroEscudo.endWidth = 0.008f;
-        rastroEscudo.material = Visual.Mat(new Color(0.35f, 0.82f, 1f), true);
-        var gradienteRastroEscudo = new Gradient();
-        gradienteRastroEscudo.SetKeys(
-            new[] { new GradientColorKey(new Color(0.45f, 0.9f, 1f), 0f), new GradientColorKey(new Color(0.2f, 0.65f, 1f), 1f) },
-            new[] { new GradientAlphaKey(0.9f, 0f), new GradientAlphaKey(0f, 1f) });
-        rastroEscudo.colorGradient = gradienteRastroEscudo;
-        rastroEscudo.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        rastroEscudo.receiveShadows = false;
-        rastroEscudo.emitting = false;
-        orbeEscudo.gameObject.SetActive(false);
         if (visualSolar && GetComponent<SolarMotionFlames>() == null)
             gameObject.AddComponent<SolarMotionFlames>();
         rodaCores = GetComponent<ColorWheelUI>();
@@ -612,7 +591,6 @@ public class PlayerController : MonoBehaviour
     {
         foreach (Renderer parte in visuais)
             if (parte != null) parte.enabled = true;
-        if (orbeEscudo != null) orbeEscudo.gameObject.SetActive(false);
     }
 
     internal void EsconderVisualDaMorte()
@@ -623,43 +601,11 @@ public class PlayerController : MonoBehaviour
         PocoGravitacional.Reiniciar();
         for (int i = 0; i < visuais.Length; i++)
             if (visuais[i] != null) visuais[i].enabled = false;
-        if (orbeEscudo != null) orbeEscudo.gameObject.SetActive(false);
     }
 
     void LateUpdate()
     {
         if (visualSolar && visualSolarRaiz != null) AtualizarBrilhoSolar();
-        AtualizarOrbeDoEscudo();
-    }
-
-    void AtualizarOrbeDoEscudo()
-    {
-        if (orbeEscudo == null) return;
-        GameManager jogo = GameManager.Instancia;
-        bool ativo = jogo != null && jogo.TemEscudo && !jogo.EmResultado;
-        if (ativo)
-        {
-            Vector3 centro = visualSolarRaiz != null ? visualSolarRaiz.position : Limites.center;
-            Vector3 escala = deformacaoSolar != null ? deformacaoSolar.lossyScale : Vector3.one;
-            float raioX = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.x));
-            float raioY = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.y));
-            // Mantém a órbita vertical em torno do Sol e deixa espaço visível até a fotosfera.
-            float angulo = Time.time * 3.8f;
-            float raioOrbitaX = Mathf.Max(0.95f, raioX + 0.38f);
-            float raioOrbitaY = Mathf.Max(0.95f, raioY + 0.38f);
-            orbeEscudo.position = centro + new Vector3(
-                Mathf.Cos(angulo) * raioOrbitaX,
-                Mathf.Sin(angulo) * raioOrbitaY,
-                -raioSolarBase * 0.55f);
-        }
-        if (!ativo && rastroEscudo != null)
-        {
-            rastroEscudo.emitting = false;
-            rastroEscudo.Clear();
-        }
-        if (orbeEscudo.gameObject.activeSelf != ativo)
-            orbeEscudo.gameObject.SetActive(ativo);
-        if (ativo && rastroEscudo != null) rastroEscudo.emitting = true;
     }
 
     /// <summary>Posição X do centro de uma faixa (a pista é centrada em X = 0).</summary>

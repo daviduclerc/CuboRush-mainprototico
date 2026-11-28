@@ -1,6 +1,7 @@
 using UnityEngine;
 
-public enum TipoItem { Obstaculo, Moeda, Escudo, Ima, Dobro, Estilingue }
+// Mantém o valor numérico do estilingue para compatibilidade com itens serializados.
+public enum TipoItem { Obstaculo = 0, Moeda = 1, Estilingue = 5 }
 
 /// <summary>
 /// Tipos de projétil dos inimigos:
@@ -14,7 +15,7 @@ public enum TipoProjetil { Normal, Alto, Rapido, Onda, Teleguiado }
 
 /// <summary>
 /// Qualquer coisa colocada na pista: obstáculo, parede de cor, projétil,
-/// moeda ou power-up. A colisão é verificada pelo ObstacleSpawner usando
+/// moeda. A colisão é verificada pelo ObstacleSpawner usando
 /// "tamanho" como caixa de colisão.
 /// </summary>
 public class TrackItem : MonoBehaviour
@@ -27,7 +28,7 @@ public class TrackItem : MonoBehaviour
     [Tooltip("Velocidade lateral (obstáculos móveis). 0 = parado.")]
     public float velocidadeX;
 
-    [Tooltip("Gira no lugar (moedas e power-ups).")]
+    [Tooltip("Gira no lugar (moedas).")]
     public bool girar;
 
     [Tooltip("Parede de cor: índice da cor que atravessa sem dano. -1 = obstáculo comum.")]

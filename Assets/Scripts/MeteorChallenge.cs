@@ -173,8 +173,7 @@ public sealed class MeteorChallenge : MonoBehaviour
     bool AplicarDano()
     {
         if (jogador.Invencivel || configuracao.danoVida <= 0f) return false;
-        if (jogo.ConsumirEscudo()) jogador.FicarInvencivel(1.2f);
-        else if (!jogador.ReceberDano(configuracao.danoVida)) return false;
+        if (!jogador.ReceberDano(configuracao.danoVida)) return false;
         CameraFollow.Tremer(0.23f, 0.31f);
         return jogo.Estado != EstadoJogo.Jogando;
     }

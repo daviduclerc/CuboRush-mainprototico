@@ -6,7 +6,7 @@ public enum EstadoJogo { Menu, Jogando, Pausado, FimDeJogo, Vitoria }
 
 /// <summary>
 /// Cérebro do jogo: estado (menu, jogando, pausa, fim), velocidade que cresce
-/// com o tempo, pontuação, moedas, recorde, power-ups, sons e a interface na tela.
+/// com o tempo, pontuação, moedas, recorde, sons e a interface na tela.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
@@ -24,10 +24,6 @@ public class GameManager : MonoBehaviour
     public int pontosPorMoeda = 10;
     public int pontosPorParedeDeCor = 25;
 
-    [Header("Power-ups (segundos)")]
-    public float duracaoIma = 8f;
-    public float duracaoDobro = 10f;
-
     [Header("Estabilidade solar")]
     [Tooltip("Estabilidade perdida por segundo enquanto o Sol não coleta energia.")]
     public float perdaEstabilidadePorSegundo = 1.5f;
@@ -43,9 +39,6 @@ public class GameManager : MonoBehaviour
     public int Recorde { get; private set; }
     public int MoedasTotal { get; private set; }
     public float Estabilidade { get; private set; } = 100f;
-    public bool TemEscudo { get; private set; }
-    public float TempoIma { get; private set; }
-    public float TempoDobro { get; private set; }
     public float TempoDeJogo { get; private set; }
     public const int MetaMoedas = 50;
     public const int MetaPontos = 1000;
@@ -64,8 +57,6 @@ public class GameManager : MonoBehaviour
 
     /// <summary>0 no começo, 1 quando chega na velocidade máxima.</summary>
     public float Dificuldade => Mathf.InverseLerp(velocidadeInicial, velocidadeMaxima, Velocidade);
-
-    int Multiplicador => TempoDobro > 0f ? 2 : 1;
 
     static bool abrirHistoricoAoCarregar;
     bool carregandoCena;
@@ -88,7 +79,7 @@ public class GameManager : MonoBehaviour
     PauseMenuUI menuPausa;
     SunDeathSequence morteSolar;
     AudioSource audioFonte;
-    AudioClip somMoeda, somPulo, somBatida, somPowerUp, somEscudo, somCor, somTiro, somGravidade, somEstilingue, somTravessia;
+    AudioClip somMoeda, somPulo, somBatida, somBonus, somCor, somTiro, somGravidade, somEstilingue, somTravessia;
     GUIStyle estilo;
 
     void Awake()
@@ -119,8 +110,7 @@ public class GameManager : MonoBehaviour
         somMoeda = CriarTom("Moeda", 900f, 1400f, 0.08f);
         somPulo = CriarTom("Pulo", 300f, 620f, 0.12f);
         somBatida = CriarTom("Batida", 220f, 40f, 0.45f);
-        somPowerUp = CriarTom("PowerUp", 500f, 1100f, 0.28f);
-        somEscudo = CriarTom("Escudo", 500f, 150f, 0.22f);
+        somBonus = CriarTom("Bonus", 500f, 1100f, 0.28f);
         somCor = CriarTom("Cor", 700f, 760f, 0.06f);
         somTiro = CriarTom("Tiro", 1200f, 250f, 0.2f);
         somGravidade = CriarTom("Gravidade", 140f, 55f, 0.6f);
@@ -152,9 +142,7 @@ public class GameManager : MonoBehaviour
                     ref velocidadeEstilingue, 0.25f, Mathf.Infinity, Time.deltaTime);
                 float multiplicadorPulso = 1f + GanhoMaximoPulso * impulsoSuave + 0.30f * estilingueSuave;
                 Velocidade = Mathf.Min(velocidadeMaxima * multiplicadorPulso, velocidadeBase * multiplicadorPulso);
-                Pontos += Velocidade * Time.deltaTime * Multiplicador;
-                if (TempoIma > 0f) TempoIma -= Time.deltaTime;
-                if (TempoDobro > 0f) TempoDobro -= Time.deltaTime;
+                Pontos += Velocidade * Time.deltaTime;
 
                 Estabilidade = Mathf.Max(0f, Estabilidade - perdaEstabilidadePorSegundo * Time.deltaTime);
                 if (Estabilidade <= 0f)
@@ -255,7 +243,7 @@ public class GameManager : MonoBehaviour
     {
         if (Estado != EstadoJogo.Jogando) return;
         Moedas++;
-        Pontos += pontosPorMoeda * Multiplicador;
+        Pontos += pontosPorMoeda;
         if (corCorreta)
         {
             Estabilidade = Mathf.Min(100f, Estabilidade + estabilidadePorMoeda);
@@ -283,19 +271,6 @@ public class GameManager : MonoBehaviour
         Estado = EstadoJogo.Vitoria;
         SalvarProgressoDaPartida();
     }
-    public void AtivarEscudo() { TemEscudo = true; Tocar(somPowerUp); }
-    public void AtivarIma() { TempoIma = duracaoIma; Tocar(somPowerUp); }
-    public void AtivarDobro() { TempoDobro = duracaoDobro; Tocar(somPowerUp); }
-
-    /// <summary>Se houver escudo, gasta ele e devolve true (o jogador sobrevive).</summary>
-    public bool ConsumirEscudo()
-    {
-        if (!TemEscudo) return false;
-        TemEscudo = false;
-        Tocar(somEscudo);
-        return true;
-    }
-
     public void SomDePulo() => Tocar(somPulo, 0.5f);
     public void SomDeCor() => Tocar(somCor, 0.4f);
     public void SomDeTiro() => Tocar(somTiro, 0.6f);
@@ -307,7 +282,7 @@ public class GameManager : MonoBehaviour
     public int Estilingue(int pontosBase, float forca)
     {
         if (Estado != EstadoJogo.Jogando) return 0;
-        int ganho = pontosBase * Multiplicador;
+        int ganho = pontosBase;
         Pontos += ganho;
         forcaEstilingue = Mathf.Clamp01(Mathf.Max(forca, tempoEstilingue > 0f ? forcaEstilingue : 0f));
         tempoEstilingue = 1.4f + 0.6f * forca;
@@ -319,9 +294,9 @@ public class GameManager : MonoBehaviour
     public int BonusGravitacional(int pontosBase)
     {
         if (Estado != EstadoJogo.Jogando) return 0;
-        int ganho = pontosBase * Multiplicador;
+        int ganho = pontosBase;
         Pontos += ganho;
-        Tocar(somPowerUp, 0.4f);
+        Tocar(somBonus, 0.4f);
         return ganho;
     }
 
@@ -330,8 +305,8 @@ public class GameManager : MonoBehaviour
     /// <summary>Atravessou uma parede com a cor certa.</summary>
     public void BonusDeCor()
     {
-        Pontos += pontosPorParedeDeCor * Multiplicador;
-        Tocar(somPowerUp, 0.5f);
+        Pontos += pontosPorParedeDeCor;
+        Tocar(somBonus, 0.5f);
     }
 
     public void FimDeJogo()

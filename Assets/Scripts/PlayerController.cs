@@ -209,9 +209,9 @@ public class PlayerController : MonoBehaviour
         transform.position = p;
         posicaoAnterior = p;
 
-        // Bolinha que gira em volta do cubo enquanto houver escudo.
-        orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", null,
-            Vector3.zero, Vector3.one * 0.3f, new Color(0.75f, 0.95f, 1f), true).transform;
+        // Orbe pequeno, azul-ciano, preso visualmente à superfície do Sol.
+        orbeEscudo = Visual.Forma(PrimitiveType.Sphere, "OrbeEscudo", transform,
+            Vector3.zero, Vector3.one * 0.2f, new Color(0.16f, 0.44f, 0.78f), true).transform;
         orbeEscudo.gameObject.SetActive(false);
         if (visualSolar && GetComponent<SolarMotionFlames>() == null)
             gameObject.AddComponent<SolarMotionFlames>();
@@ -415,8 +415,15 @@ public class PlayerController : MonoBehaviour
             orbeEscudo.gameObject.SetActive(jogo.TemEscudo);
         if (jogo.TemEscudo)
         {
-            float a = Time.time * 6f;
-            orbeEscudo.position = Limites.center + new Vector3(Mathf.Cos(a), 0.15f, Mathf.Sin(a)) * 0.95f;
+            Vector3 centro = visualSolarRaiz != null ? visualSolarRaiz.position : Limites.center;
+            Vector3 escala = deformacaoSolar != null ? deformacaoSolar.lossyScale : Vector3.one;
+            float raioX = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.x));
+            float raioY = Mathf.Max(0.05f, raioSolarBase * Mathf.Abs(escala.y));
+            float a = Time.time * 3.2f;
+            orbeEscudo.position = centro + new Vector3(
+                Mathf.Cos(a) * raioX * 0.42f,
+                Mathf.Sin(a) * raioY * 0.42f,
+                -raioSolarBase * 0.78f);
         }
     }
 

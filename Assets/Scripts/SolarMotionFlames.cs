@@ -137,14 +137,24 @@ public sealed class SolarMotionFlames : MonoBehaviour
         float proporcao = Mathf.Max(0.1f, Mathf.Pow(volume / volumeInicial, 1f / 3f));
         origem.localScale = Vector3.one * proporcao;
         origemRastroPulo.position = new Vector3(0f, 0f, transform.position.z);
-        material.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
-        materialTraseiro.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+        // Usa o mesmo batimento do Sol e reduz de verdade a opacidade entre pulsos.
+        float batimento = jogador.BatimentoPerigo;
+        float brilhoBatimento = batimento > 0f ? Mathf.Lerp(0.38f, 1.35f, batimento) : 1f;
+        float opacidadeBatimento = batimento > 0f ? Mathf.Lerp(0.06f, 1f, batimento) : 1f;
+        if (jogador.Invencivel && Mathf.FloorToInt(Time.time * 10f) % 2 != 0)
+            opacidadeBatimento *= 0.04f;
+        Color corLabareda = jogador.CorVisualAtual * (3.5f * brilhoBatimento);
+        material.SetColor("_Tint", corLabareda);
+        material.SetFloat("_PulseOpacity", opacidadeBatimento);
+        materialTraseiro.SetColor("_Tint", corLabareda);
+        materialTraseiro.SetFloat("_PulseOpacity", opacidadeBatimento);
         materialTraseiro.SetVector("_SourceCenter", sol.position);
         Vector3 raios = new Vector3(Mathf.Abs(escalaCorpo.x), Mathf.Abs(escalaCorpo.y), Mathf.Abs(escalaCorpo.z)) * raioCorpo;
         materialTraseiro.SetVector("_SolarMaskRadii", raios * 0.98f);
         materialLateral.SetVector("_SolarMaskRadii", raios * 0.98f);
         materialTraseiro.SetFloat("_RearClipDistance", raios.z * 0.85f);
-        materialLateral.SetColor("_Tint", jogador.CorVisualAtual * 3.5f);
+        materialLateral.SetColor("_Tint", corLabareda);
+        materialLateral.SetFloat("_PulseOpacity", opacidadeBatimento);
         materialLateral.SetVector("_SourceCenter", sol.position);
         materialLateral.SetFloat("_CutDistance", raioCorpo * proporcao * 0.80f);
         if (estado != EstadoJogo.Jogando)

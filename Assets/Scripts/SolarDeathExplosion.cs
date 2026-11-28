@@ -24,13 +24,14 @@ public sealed class SolarDeathExplosion : MonoBehaviour
     void Iniciar(Color cor, float tamanho)
     {
         escala = tamanho;
-        corExplosao = Color.Lerp(cor, new Color(1f, 0.22f, 0.035f), 0.32f);
+        // Mantém a cor que o jogador escolheu; o núcleo branco preserva o impacto.
+        corExplosao = cor;
         CriarParticulas();
         CriarOndaDeChoque();
 
         clarão = gameObject.AddComponent<Light>();
         clarão.type = LightType.Point;
-        clarão.color = new Color(1f, 0.58f, 0.2f);
+        clarão.color = Color.Lerp(Color.white, corExplosao, 0.72f);
         clarão.intensity = 24f * escala;
         clarão.range = 16f * escala;
         clarão.shadows = LightShadows.None;
@@ -61,7 +62,7 @@ public sealed class SolarDeathExplosion : MonoBehaviour
                 new GradientColorKey(Color.white, 0f),
                 new GradientColorKey(Color.Lerp(corExplosao, Color.white, 0.25f), 0.16f),
                 new GradientColorKey(corExplosao, 0.52f),
-                new GradientColorKey(new Color(0.24f, 0.12f, 0.48f), 1f)
+                new GradientColorKey(Color.Lerp(corExplosao, Color.black, 0.62f), 1f)
             },
             new[] {
                 new GradientAlphaKey(1f, 0f),
